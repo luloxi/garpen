@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { CSP_CONNECT_HOSTS, CSP_IMG_HOSTS, SECURITY_HEADERS, buildCsp, newNonce } from "../lib/csp.ts";
+import { CSP_CONNECT_HOSTS, CSP_IMG_HOSTS, FRAME_ANCESTORS, SECURITY_HEADERS, buildCsp, newNonce } from "../lib/csp.ts";
 
 const NONCE = "N0nce+Val/id=";
 const REQUIRED = [
@@ -68,7 +68,7 @@ test("production policy has every directive, the nonce, and no eval or wildcard"
   assert.deepEqual(directives.get("object-src"), ["'none'"]);
   assert.deepEqual(directives.get("base-uri"), ["'self'"]);
   assert.deepEqual(directives.get("form-action"), ["'self'"]);
-  assert.deepEqual(directives.get("frame-ancestors"), ["'none'"]);
+  assert.deepEqual(directives.get("frame-ancestors"), ["'self'", "https://genki.lulox.com.ar"]);
   assert.deepEqual(directives.get("upgrade-insecure-requests"), []);
 });
 
@@ -82,7 +82,8 @@ test("the allow-list is exactly the hosts the client uses", () => {
   assert.deepEqual([...CSP_CONNECT_HOSTS], ["https://gravatar.com", "https://unavatar.io"]);
   const csp = buildCsp({ nonce: NONCE, isDev: false });
   const found = [...csp.matchAll(/https:\/\/[^\s;]+/g)].map((match) => match[0]);
-  assert.deepEqual(found, [...CSP_IMG_HOSTS, ...CSP_CONNECT_HOSTS]);
+  assert.deepEqual([...FRAME_ANCESTORS], ["https://genki.lulox.com.ar"]);
+  assert.deepEqual(found, [...CSP_IMG_HOSTS, ...CSP_CONNECT_HOSTS, ...FRAME_ANCESTORS]);
 });
 
 test("dev adds unsafe-eval and ws: and production does not", () => {

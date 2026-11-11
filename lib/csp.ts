@@ -32,6 +32,9 @@ export const CSP_IMG_HOSTS = [
  */
 export const CSP_CONNECT_HOSTS = ["https://gravatar.com", "https://unavatar.io"] as const;
 
+/** Origins allowed to show Garpen in an iframe (besides itself). */
+export const FRAME_ANCESTORS = ["https://genki.lulox.com.ar"] as const;
+
 /** Next.js reads the first nonce- source that matches this (see getScriptNonceFromHeader). */
 const NONCE_PATTERN = /^[A-Za-z0-9+/_-]+={0,2}$/;
 
@@ -103,7 +106,8 @@ export function buildCsp({ nonce, isDev }: { nonce: string; isDev: boolean }): s
     "object-src 'none'",
     "base-uri 'self'",
     "form-action 'self'",
-    "frame-ancestors 'none'",
+    // Only Genkilulox (Luciano's windowed desktop) may frame Garpen; everyone else is still refused.
+    `frame-ancestors 'self' ${FRAME_ANCESTORS.join(" ")}`,
     "upgrade-insecure-requests",
   ];
   return directives.join("; ");
