@@ -14,6 +14,8 @@ declare global {
     LUMA_ICS_URL?: string;
     /** AES-256-GCM key for the saved Luma ICS link, 64 hex chars. openssl rand -hex 32 | npx wrangler secret put LUMA_SETTINGS_KEY. Never log it or the URL. */
     LUMA_SETTINGS_KEY?: string;
+    /** HMAC for the shared lulox_sso cookie from Genki (wrangler secret put). If unset, SSO is off and Google login stays as-is. */
+    LULOX_SSO_SECRET?: string;
   }
 }
 export {};

@@ -4,6 +4,8 @@ import { redirect } from "next/navigation";
 import Landing from "@/app/landing";
 import { getAuth } from "@/lib/auth";
 import { homeQuery, homeTarget, landingLang, type HomeSearchParams } from "@/lib/home";
+import { APP_ORIGIN, requestFromHeaders, ssoConsumeRedirect } from "@/lib/sso-login";
+import { getCloudflareContext } from "@opennextjs/cloudflare";
 
 export const dynamic = "force-dynamic";
 
@@ -16,7 +18,13 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
   const params = await searchParams;
   const query = homeQuery(params);
   const auth = await getAuth();
-  const session = await auth.api.getSession({ headers: await headers() });
+  const headerList = await headers();
+  const session = await auth.api.getSession({ headers: headerList });
+  if (!session) {
+    const { env } = await getCloudflareContext({ async: true });
+    const consume = await ssoConsumeRedirect(requestFromHeaders(headerList, `${APP_ORIGIN}/${query}`), env.LULOX_SSO_SECRET, query ? `/${query}` : "/dashboard");
+    if (consume) redirect(consume);
+  }
   const target = homeTarget({
     session,
     approvalStatus: session ? session.user.approvalStatus : null,

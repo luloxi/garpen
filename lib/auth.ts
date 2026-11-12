@@ -1,5 +1,6 @@
 import { betterAuth } from "better-auth";
 import { getCloudflareContext } from "@opennextjs/cloudflare";
+import { luloxSsoPlugin } from "@/lib/lulox-sso-plugin";
 
 const APP_URL = "https://garpen.lulox.com.ar";
 export const ADMIN_EMAIL = "lucianoolivabianco@gmail.com";
@@ -11,8 +12,9 @@ export async function getAuth() {
     appName: "Garpen",
     baseURL: APP_URL,
     secret: env.BETTER_AUTH_SECRET,
-    trustedOrigins: ["https://garpen.lulox.com.ar", "https://erp.lulox.com.ar"],
+    trustedOrigins: ["https://garpen.lulox.com.ar", "https://erp.lulox.com.ar", "https://genki.lulox.com.ar"],
     database: env.DB,
+    plugins: [luloxSsoPlugin({ secret: env.LULOX_SSO_SECRET, allowedEmail: ADMIN_EMAIL })],
     socialProviders: {
       google: {
         clientId: env.GOOGLE_CLIENT_ID,
@@ -58,6 +60,12 @@ export async function getAuth() {
         validateSchema: false,
       },
       useSecureCookies: true,
+      defaultCookieAttributes: {
+        sameSite: "lax",
+        secure: true,
+        httpOnly: true,
+        path: "/",
+      },
     },
   });
 }
