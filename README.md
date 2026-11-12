@@ -57,6 +57,7 @@ Configurar como secrets del Worker (nunca en Git):
 - `PORTFOLIO_INBOUND_SECRET`: secreto compartido con el portfolio (`steal-this-portfolio`, donde se llama `SERPIX_INBOUND_SECRET`). El portfolio lo manda en el header `x-serpix-secret` a `POST /api/inbound/portfolio`.
 - `VAPID_PRIVATE_KEY`: clave privada VAPID (base64url) para las notificaciones push. La pública es la variable `VAPID_PUBLIC_KEY` de `wrangler.jsonc`.
 - `LUMA_ICS_URL`: enlace ICS de respaldo del calendario de Luma. Se configura con `wrangler secret put LUMA_ICS_URL` y no va en git. Si tampoco hay un link guardado en Configuración, el cron escribe `luma_sync_skipped` y no hace nada: los eventos de un contacto se pueden cargar a mano igual. La URL no se loguea.
+- `LULOX_SSO_SECRET`: HMAC de la cookie compartida `lulox_sso` que firma Genki (`Domain=.lulox.com.ar`). Si no está, el SSO queda apagado y el login con Google (fuera de un iframe) sigue igual. `npx wrangler secret put LULOX_SSO_SECRET` — nunca en git ni en `wrangler.jsonc`.
 - `LUMA_SETTINGS_KEY`: clave AES-256-GCM de 64 hex para cifrar el link ICS que el dueño pega en Configuración. Se carga sin imprimirla:
 
 ```bash
@@ -123,6 +124,8 @@ Qué permite la política, y por qué:
 - `font-src 'self'`. No se cargan fuentes de Google: el `@import` de `globals.css` se sacó. DM Sans y Manrope siguen nombradas en la pila y, si no están instaladas, cae a `system-ui`.
 - `worker-src 'self'` (el `sw.js` del mismo origen), `manifest-src 'self'`, `base-uri 'self'`, `object-src 'none'`, `form-action 'self'`, `frame-ancestors 'self' https://genki.lulox.com.ar` (solo Genkilulox puede mostrar Garpen en una ventana), `upgrade-insecure-requests`.
 - En `next dev` se agregan `'unsafe-eval'` y `ws:` para el HMR. Un build de producción no los lleva.
+
+Dentro de un iframe de Genki el login no va a Google (Google responde 403 ahí). Si hay cookie `lulox_sso` válida para `lucianoolivabianco@gmail.com`, Garpen reutiliza esa cuenta de Better Auth (mismo user id). Si no, muestra «Iniciá sesión en Genki» y abre `https://genki.lulox.com.ar/?return=…` en el frame superior. Fuera del iframe el botón de Google sigue igual.
 
 El ingreso con Google es un redirect de toda la página (`authClient.signIn.social` termina en `window.location` del cliente de Better Auth; no hay plugin de popup). `Cross-Origin-Opener-Policy: same-origin-allow-popups` no corta ese flujo y deja funcionar `window.open` (WhatsApp, búsquedas). Junto con la CSP van `X-Content-Type-Options: nosniff`, `Referrer-Policy: strict-origin-when-cross-origin` y un `Permissions-Policy` mínimo: cámara, micrófono y geolocalización cerrados; WebAuthn (`publickey-credentials-get/create`) permitido solo en este origen. La cámara del ticket es un `<input capture>`, no `getUserMedia`, así que `camera=()` no la bloquea.
 

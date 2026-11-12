@@ -1,40 +1,34 @@
-"use client";
-
-import { useState } from "react";
-import { authClient } from "@/lib/auth-client";
+import { headers } from "next/headers";
+import { redirect } from "next/navigation";
+import { getCloudflareContext } from "@opennextjs/cloudflare";
+import LoginForm from "@/app/login-form";
+import { getAuth } from "@/lib/auth";
+import { APP_ORIGIN, requestFromHeaders, requestIsIframe, ssoConsumeRedirect } from "@/lib/sso-login";
 import { safeNext } from "@/lib/nav";
 
-export default function LoginPage() {
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
+export const dynamic = "force-dynamic";
 
-  async function signIn() {
-    setLoading(true);
-    setError("");
-    const next = safeNext(new URLSearchParams(window.location.search).get("next"), window.location.origin);
-    const result = await authClient.signIn.social({
-      provider: "google",
-      callbackURL: next,
-      errorCallbackURL: "/login?error=oauth",
-    });
-    if (result.error) {
-      setError("No se pudo iniciar sesión con Google. Intentá nuevamente.");
-      setLoading(false);
-    }
+type Search = { next?: string | string[]; error?: string | string[] };
+
+function first(value: string | string[] | undefined): string | undefined {
+  return typeof value === "string" ? value : Array.isArray(value) ? value[0] : undefined;
+}
+
+export default async function LoginPage({ searchParams }: { searchParams: Promise<Search> }) {
+  const params = await searchParams;
+  const headerList = await headers();
+  const next = safeNext(first(params.next), APP_ORIGIN);
+  const errorCode = first(params.error);
+  const auth = await getAuth();
+  const session = await auth.api.getSession({ headers: headerList });
+  if (session) redirect(next);
+
+  const request = requestFromHeaders(headerList, `${APP_ORIGIN}/login`);
+  const { env } = await getCloudflareContext({ async: true });
+  if (errorCode !== "sso") {
+    const consume = await ssoConsumeRedirect(request, env.LULOX_SSO_SECRET, next);
+    if (consume) redirect(consume);
   }
 
-  return (
-    <main className="auth-screen">
-      <section className="auth-card">
-        <img className="auth-brand-icon" src="/icons/icon-192.v8.png" alt="" width="88" height="88" />
-        <h1>Garpen</h1>
-        <p className="auth-copy">Tu espacio de trabajo, relaciones y finanzas.</p>
-        <button className="primary-button" onClick={signIn} disabled={loading}>
-          {loading ? "Conectando con Google…" : "Continuar con Google"}
-        </button>
-        {error && <p className="error-message" role="alert">{error}</p>}
-        <p className="auth-footnote">El acceso requiere aprobación del administrador.</p>
-      </section>
-    </main>
-  );
+  return <LoginForm framed={requestIsIframe(request)} errorCode={errorCode} next={next} />;
 }

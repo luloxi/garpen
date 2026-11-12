@@ -7,6 +7,7 @@ import { shouldMountGate } from "@/lib/e2e/gate";
 import { encryptionMode } from "@/lib/e2e-server";
 import type { D1Like } from "@/lib/finance";
 import { getAuth } from "@/lib/auth";
+import { APP_ORIGIN, requestFromHeaders, ssoConsumeRedirect } from "@/lib/sso-login";
 export const dynamic = "force-dynamic";
 
 type SearchParams = { [key: string]: string | string[] | undefined };
@@ -23,9 +24,16 @@ function searchSuffix(searchParams: SearchParams): string {
 
 export default async function DashboardPage({ searchParams }: { searchParams: Promise<SearchParams> }) {
  const auth = await getAuth();
- const session = await auth.api.getSession({ headers: await headers() });
+ const headerList = await headers();
+ const session = await auth.api.getSession({ headers: headerList });
  const query = searchSuffix(await searchParams);
- if (!session) redirect("/login?next=" + encodeURIComponent("/dashboard" + query));
+ if (!session) {
+  const next = "/dashboard" + query;
+  const { env } = await getCloudflareContext({ async: true });
+  const consume = await ssoConsumeRedirect(requestFromHeaders(headerList, `${APP_ORIGIN}${next}`), env.LULOX_SSO_SECRET, next);
+  if (consume) redirect(consume);
+  redirect("/login?next=" + encodeURIComponent(next));
+ }
  if (session.user.approvalStatus !== "approved") redirect("/pending");
  const name = session.user.name;
  const email = session.user.email;
