@@ -8,7 +8,7 @@ import { safeNext } from "@/lib/nav";
 
 export const dynamic = "force-dynamic";
 
-type Search = { next?: string | string[]; error?: string | string[] };
+type Search = { next?: string | string[]; error?: string | string[]; signedout?: string | string[] };
 
 function first(value: string | string[] | undefined): string | undefined {
   return typeof value === "string" ? value : Array.isArray(value) ? value[0] : undefined;
@@ -25,7 +25,7 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
 
   const request = requestFromHeaders(headerList, `${APP_ORIGIN}/login`);
   const { env } = await getCloudflareContext({ async: true });
-  if (errorCode !== "sso") {
+  if (errorCode !== "sso" && first(params.signedout) !== "1") {
     const consume = await ssoConsumeRedirect(request, env.LULOX_SSO_SECRET, next);
     if (consume) redirect(consume);
   }

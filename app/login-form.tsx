@@ -4,6 +4,7 @@ import { useState, useSyncExternalStore } from "react";
 import { authClient } from "@/lib/auth-client";
 import { APP_ORIGIN, GENKI_ORIGIN, genkiLoginUrl } from "@/lib/sso-login";
 import { safeNext } from "@/lib/nav";
+import { turnSsoOn } from "@/lib/sign-out-redirect";
 
 function iframeSnapshot(): boolean {
   try {
@@ -41,6 +42,7 @@ export default function LoginForm({
 
   async function signIn() {
     if (inFrame) return;
+    turnSsoOn(document);
     setLoading(true);
     setError("");
     const callbackURL = safeNext(next, window.location.origin);
@@ -62,7 +64,7 @@ export default function LoginForm({
         <h1>Garpen</h1>
         <p className="auth-copy">Tu espacio de trabajo, relaciones y finanzas.</p>
         {inFrame ? (
-          <a className="primary-button" href={genkiHref} target="_top" rel="noopener">
+          <a className="primary-button" href={genkiHref} target="_top" rel="noopener" onClick={() => turnSsoOn(document)}>
             Iniciá sesión en Genki
           </a>
         ) : (
