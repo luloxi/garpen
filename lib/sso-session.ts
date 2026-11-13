@@ -1,4 +1,4 @@
-import { isSsoEmailAllowed } from "./sso-login.ts";
+import { isSsoEmailAllowed, ssoIsOff } from "./sso-login.ts";
 import { readSso } from "./lulox-sso.ts";
 
 export type SsoAccount = {
@@ -38,6 +38,7 @@ export async function consumeSsoSession(input: {
   createSession: (userId: string) => Promise<SsoSessionRecord | null>;
   now?: number;
 }): Promise<{ user: SsoAccount; session: SsoSessionRecord } | null> {
+  if (ssoIsOff(input.request)) return null;
   const sso = await readSso(input.request, input.secret, input.now);
   if (!sso || !isSsoEmailAllowed(sso.email, input.allowedEmail)) return null;
   const user = await input.findUserByEmail(sso.email);

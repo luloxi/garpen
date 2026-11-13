@@ -44,6 +44,15 @@ export function isGoogleSignInPath(pathname: string): boolean {
   return pathname === "/api/auth/sign-in/social" || pathname.endsWith("/sign-in/social");
 }
 
+/** Set by the sign-out button: the user left on purpose, so lulox_sso must not mint a new session behind their back. */
+export const SSO_OFF_COOKIE = "garpen_sso_off";
+export const SIGNED_OUT_PATH = "/login?signedout=1";
+
+export function ssoIsOff(request: Request): boolean {
+  const cookie = request.headers.get("cookie") ?? "";
+  return cookie.split(";").some((part) => part.trim() === `${SSO_OFF_COOKIE}=1`);
+}
+
 /** If the SSO cookie is valid for the allowlist, the path that mints the Better Auth session. */
 export async function ssoConsumeRedirect(
   request: Request,
@@ -51,6 +60,7 @@ export async function ssoConsumeRedirect(
   next: string,
   now?: number,
 ): Promise<string | null> {
+  if (ssoIsOff(request)) return null;
   const sso = await readSso(request, secret, now);
   if (!sso || !isSsoEmailAllowed(sso.email)) return null;
   return ssoConsumePath(safeNext(next, APP_ORIGIN));
