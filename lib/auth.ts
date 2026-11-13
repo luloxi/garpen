@@ -1,6 +1,7 @@
 import { betterAuth } from "better-auth";
 import { getCloudflareContext } from "@opennextjs/cloudflare";
 import { luloxSsoPlugin } from "@/lib/lulox-sso-plugin";
+import { isAutoApproved } from "@/lib/approval";
 
 const APP_URL = "https://garpen.lulox.com.ar";
 export const ADMIN_EMAIL = "lucianoolivabianco@gmail.com";
@@ -46,7 +47,7 @@ export async function getAuth() {
               data: {
                 ...user,
                 role: isAdmin ? "admin" : "user",
-                approvalStatus: isAdmin ? "approved" : "pending",
+                approvalStatus: isAutoApproved(user.email, ADMIN_EMAIL) ? "approved" : "pending",
               },
             };
           },
