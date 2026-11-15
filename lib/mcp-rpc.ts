@@ -1,6 +1,6 @@
 // Garpen McpRpc. Pure logic (no Next.js or Cloudflare imports) so node:test can load it.
 import type { D1Like } from "./finance.ts";
-import { resolveOwner } from "./mailtox-link.ts";
+import { resolveApprovedUser } from "./mailtox-link.ts";
 import { isDateKey } from "./recurring.ts";
 
 export type RpcErrorCode = "no_owner" | "encrypted_account" | "invalid" | "not_found" | "not_enabled" | "internal";
@@ -116,11 +116,14 @@ function record(input: unknown): Record<string, unknown> | null {
 }
 
 async function ownerId(db: D1Like, ownerEmail: string | undefined): Promise<{ ok: true; userId: string } | { ok: false; result: RpcResult<never> }> {
-  const gate = await resolveOwner(db, ownerEmail);
+  // HTTP /mcp scopes to any approved user. The service binding still passes MCP_OWNER_EMAIL (admin).
+  const gate = await resolveApprovedUser(db, ownerEmail);
   if (gate.ok) return gate;
   if (gate.status === "skipped_e2e") return { ok: false, result: fail("encrypted_account", ENCRYPTED) };
   return { ok: false, result: fail("no_owner", "no owner") };
 }
+
+export { resolveApprovedUser };
 
 function parsePage(input: Record<string, unknown>): { ok: true; limit: number; offset: number } | { ok: false; message: string } {
   const limit = input.limit === undefined ? DEFAULT_LIMIT : input.limit;

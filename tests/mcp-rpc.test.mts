@@ -81,14 +81,12 @@ function errorOf(result: RpcResult<unknown>) {
 test("owner gating fails closed before validation", async () => {
   const user = setup("user", "approved");
   contact(user.db, "secret", "owner", "Secreto");
-  const before = counts(user.db);
-  assert.deepEqual(await listContacts(user.d1, OWNER, { limit: 0 }), NO_OWNER);
-  assert.deepEqual(await searchContacts(user.d1, OWNER, { query: "Secreto" }), NO_OWNER);
-  assert.deepEqual(await createContact(user.d1, OWNER, { name: "Nuevo" }), NO_OWNER);
-  assert.deepEqual(await createTask(user.d1, OWNER, { title: "T" }), NO_OWNER);
-  assert.deepEqual(await createEvent(user.d1, OWNER, { title: "E", occurredAt: "2026-01-01" }), NO_OWNER);
-  assert.deepEqual(await listEvents(user.d1, OWNER, { from: "2026-01-01", to: "2026-01-02" }), NO_OWNER);
-  assert.deepEqual(counts(user.db), before);
+  const listed = await listContacts(user.d1, OWNER, {});
+  assert.equal(listed.ok, true);
+  if (listed.ok) assert.deepEqual(listed.data.items.map((item) => item.id), ["secret"]);
+  const badLimit = await listContacts(user.d1, OWNER, { limit: 0 });
+  assert.equal(badLimit.ok, false);
+  if (!badLimit.ok) assert.equal(badLimit.error.code, "invalid");
 
   const pending = setup("admin", "pending");
   assert.deepEqual(await listTasks(pending.d1, OWNER, {}), NO_OWNER);
@@ -456,4 +454,16 @@ test("createContact stores metEvent, metEventAt and metNote", async () => {
   assert.equal(errorOf(await createContact(d1, OWNER, { name: "X", metEventAt: "2026-02-31" })).message, "invalid metEventAt");
   assert.equal(errorOf(await createContact(d1, OWNER, { name: "X", metEventAt: "ayer" })).message, "invalid metEventAt");
   assert.equal(count(db, "contacts"), before);
+});
+
+test("approved non-admin sees only their rows; pending cannot", async () => {
+  const { db, d1 } = setup();
+  person(db, "member", "user", "approved", "member@test.local");
+  person(db, "pending", "user", "pending", "pending@test.local");
+  contact(db, "owner-c", "owner", "Owner contact");
+  contact(db, "member-c", "member", "Member contact");
+  const mine = await listContacts(d1, "member@test.local", {});
+  assert.equal(mine.ok, true);
+  if (mine.ok) assert.deepEqual(mine.data.items.map((item) => item.id), ["member-c"]);
+  assert.deepEqual(await listContacts(d1, "pending@test.local", {}), NO_OWNER);
 });
