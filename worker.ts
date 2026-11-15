@@ -19,8 +19,9 @@ import { listContactsWithEmail, upsertContactByEmail } from "./lib/mailtox-link.
 import { createContact, createEvent, createTask, listContacts, listEvents, listInquiries, listTasks, searchContacts, searchEvents, searchInquiries, searchTasks } from "./lib/mcp-rpc.ts";
 import { runLumaSyncForOwner } from "./lib/luma-settings.ts";
 import { legacyHostRedirect } from "./lib/legacy-host.ts";
+import { handleGarpenMcp } from "./lib/mcp-route.ts";
 
-type Env = { DB: Parameters<typeof notifyOverdueInvoices>[0] & Parameters<typeof generateDue>[0] & Parameters<typeof purgeOrphanReceipts>[0] & Parameters<typeof runLumaSyncForOwner>[0]["DB"]; VAPID_PUBLIC_KEY?: string; VAPID_PRIVATE_KEY?: string; MAILTOX_LINK_OWNER_EMAIL?: string; MCP_OWNER_EMAIL?: string; LUMA_ICS_URL?: string; LUMA_SETTINGS_KEY?: string };
+type Env = { DB: Parameters<typeof notifyOverdueInvoices>[0] & Parameters<typeof generateDue>[0] & Parameters<typeof purgeOrphanReceipts>[0] & Parameters<typeof runLumaSyncForOwner>[0]["DB"]; VAPID_PUBLIC_KEY?: string; VAPID_PRIVATE_KEY?: string; MAILTOX_LINK_OWNER_EMAIL?: string; MCP_OWNER_EMAIL?: string; LUMA_ICS_URL?: string; LUMA_SETTINGS_KEY?: string; BETTER_AUTH_SECRET?: string; LULOX_SSO_SECRET?: string };
 type Ctx = { waitUntil(p: Promise<unknown>): void };
 const ADMIN_EMAIL = "lucianoolivabianco@gmail.com"; // VAPID subject; same value as lib/auth.ts (not imported: it pulls Better Auth into the cron)
 
@@ -106,9 +107,11 @@ export class McpRpc extends WorkerEntrypoint<Env> {
 }
 
 const worker = {
-  fetch(request: Request, env: unknown, ctx: unknown) {
+  async fetch(request: Request, env: unknown, ctx: unknown) {
     const redirected = legacyHostRedirect(request);
     if (redirected) return redirected;
+    const mcp = await handleGarpenMcp(request, env as Env);
+    if (mcp) return mcp;
     return handler.fetch(request, env, ctx);
   },
   async scheduled(event: { cron?: string }, env: Env, ctx: Ctx) {

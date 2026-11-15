@@ -216,3 +216,7 @@ Automatic receipt reading starts off for people who join by invitation (`user.ai
 ## License
 
 The code is licensed under the [GNU AGPL-3.0-or-later](LICENSE). If you run a modified version on a server, you must share its source with its users.
+
+## MCP remoto
+
+Streamable HTTP en [`https://garpen.lulox.com.ar/mcp`](https://garpen.lulox.com.ar/mcp). Auth: `Authorization: Bearer <token>` (se genera en [/mcp](https://garpen.lulox.com.ar/mcp) con la sesión) o cookie `lulox_sso` de Genki. Cada usuario aprobado ve solo sus contactos, tareas, agenda y consultas. No hay tools de borrado. El binding `McpRpc` para lulox-mcp sigue igual (cuenta del dueño).

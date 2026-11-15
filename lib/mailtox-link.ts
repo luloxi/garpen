@@ -121,6 +121,16 @@ export async function resolveOwner(db: D1Like, ownerEmail: string | undefined): 
   return { ok: true, userId: owner.id };
 }
 
+/** Any approved user, for the HTTP /mcp endpoint. Encrypted accounts stay unreadable. */
+export async function resolveApprovedUser(db: D1Like, userEmail: string | undefined): Promise<OwnerGate> {
+  const email = userEmail?.trim().toLowerCase() ?? "";
+  if (!email) return { ok: false, status: "no_owner" };
+  const user = await db.prepare("SELECT id, approvalStatus FROM user WHERE lower(email)=?").bind(email).first<OwnerRow>();
+  if (!user || user.approvalStatus !== "approved") return { ok: false, status: "no_owner" };
+  if (await e2eBlocks(db, user.id)) return { ok: false, status: "skipped_e2e" };
+  return { ok: true, userId: user.id };
+}
+
 function emptyPage(): ContactPage {
   return { contacts: [], nextCursor: null };
 }
