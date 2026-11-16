@@ -9,14 +9,21 @@ import {
   createContact,
   createEvent,
   createTask,
+  deleteNote,
+  deleteTask,
   listContacts,
   listEvents,
   listInquiries,
+  listNotes,
   listTasks,
   searchContacts,
   searchEvents,
   searchInquiries,
+  searchNotes,
   searchTasks,
+  taskToUndatedNote,
+  updateNote,
+  updateTask,
   type RpcResult,
 } from "../lib/mcp-rpc.ts";
 import { openDb } from "./db-shim.mts";
@@ -120,6 +127,12 @@ test("e2e and any non-server mode return encrypted_account and write nothing", a
     assert.deepEqual(await createContact(d1, OWNER, { name: "Nuevo" }), ENCRYPTED, mode);
     assert.deepEqual(await createTask(d1, OWNER, { title: "Tarea" }), ENCRYPTED, mode);
     assert.deepEqual(await createEvent(d1, OWNER, { title: "Evt", occurredAt: "2026-08-01T10:00", contactIds: ["keep"] }), ENCRYPTED, mode);
+    assert.deepEqual(await updateTask(d1, OWNER, { id: "x", title: "Y" }), ENCRYPTED, mode);
+    assert.deepEqual(await deleteTask(d1, OWNER, { id: "x", confirm: true }), ENCRYPTED, mode);
+    assert.deepEqual(await taskToUndatedNote(d1, OWNER, { taskId: "x" }), ENCRYPTED, mode);
+    assert.deepEqual(await updateNote(d1, OWNER, { id: "x", title: "Y" }), ENCRYPTED, mode);
+    assert.deepEqual(await deleteNote(d1, OWNER, { id: "x", confirm: true }), ENCRYPTED, mode);
+    assert.deepEqual(await listNotes(d1, OWNER, {}), ENCRYPTED, mode);
     assert.deepEqual(await listContacts(d1, OWNER, { limit: 0 }), ENCRYPTED, mode);
     assert.deepEqual(counts(db), before, mode);
   }
@@ -410,7 +423,7 @@ test("McpRpc is a named WorkerEntrypoint and the logic module stays pure", () =>
   const start = worker.indexOf("export class McpRpc");
   const end = worker.indexOf("const worker = {");
   const body = worker.slice(start, end);
-  for (const name of ["listContacts", "searchContacts", "createContact", "listTasks", "searchTasks", "createTask", "listEvents", "searchEvents", "createEvent", "listInquiries", "searchInquiries"]) {
+  for (const name of ["listContacts", "searchContacts", "createContact", "listTasks", "searchTasks", "createTask", "updateTask", "deleteTask", "taskToUndatedNote", "listNotes", "searchNotes", "updateNote", "deleteNote", "listEvents", "searchEvents", "createEvent", "listInquiries", "searchInquiries"]) {
     assert.match(body, new RegExp("\\b" + name + "\\("));
   }
   assert.equal(body.includes("SELECT"), false);
@@ -466,4 +479,83 @@ test("approved non-admin sees only their rows; pending cannot", async () => {
   assert.equal(mine.ok, true);
   if (mine.ok) assert.deepEqual(mine.data.items.map((item) => item.id), ["member-c"]);
   assert.deepEqual(await listContacts(d1, "pending@test.local", {}), NO_OWNER);
+});
+
+test("update and delete task require a valid id; delete requires confirm=true", async () => {
+  const { db, d1 } = setup();
+  contact(db, "mine", "owner", "Mia");
+  const created = await createTask(d1, OWNER, { title: "Llamar", dueDate: "2026-11-09", contactId: "mine" });
+  assert.equal(created.ok, true);
+  if (!created.ok) return;
+  assert.deepEqual(errorOf(await updateTask(d1, OWNER, { title: "X" })), { code: "invalid", message: "invalid id" });
+  assert.deepEqual(errorOf(await deleteTask(d1, OWNER, { id: created.data.id })), { code: "invalid", message: "confirm required" });
+  assert.deepEqual(errorOf(await deleteTask(d1, OWNER, { id: created.data.id, confirm: false })), { code: "invalid", message: "confirm required" });
+  assert.deepEqual(errorOf(await deleteTask(d1, OWNER, { id: created.data.id, confirm: "true" })), { code: "invalid", message: "confirm required" });
+  const updated = await updateTask(d1, OWNER, { id: created.data.id, title: "  Llamar ya  ", dueDate: null, priority: "high" });
+  assert.equal(updated.ok, true);
+  if (!updated.ok) return;
+  assert.equal(updated.data.title, "Llamar ya");
+  assert.equal(updated.data.dueDate, null);
+  assert.equal(updated.data.priority, "high");
+  assert.equal(updated.data.contactId, "mine");
+  const gone = await deleteTask(d1, OWNER, { id: created.data.id, confirm: true });
+  assert.deepEqual(gone, { ok: true, data: { id: created.data.id, deleted: true } });
+  assert.equal((db.prepare("SELECT COUNT(*) AS n FROM tasks WHERE id=?").get(created.data.id) as { n: number }).n, 0);
+  assert.deepEqual(errorOf(await deleteTask(d1, OWNER, { id: created.data.id, confirm: true })), { code: "not_found", message: "not found" });
+  assert.deepEqual(errorOf(await updateTask(d1, OWNER, { id: "missing", title: "X" })), { code: "not_found", message: "not found" });
+});
+
+test("notes can be listed, cleared of dates, updated and deleted", async () => {
+  const { db, d1 } = setup();
+  contact(db, "mine", "owner", "Mia");
+  person(db, "other", "user", "approved", "other@test.local");
+  activity(db, "n1", "owner", "note", "Seguimiento", "", { body: "Texto" });
+  db.prepare("INSERT INTO activity_contacts (activity_id,contact_id,user_id) VALUES (?,?,?)").run("n1", "mine", "owner");
+  activity(db, "n2", "owner", "note", "Con fecha", "2026-11-10T11:00", { body: "Dated" });
+  activity(db, "e1", "owner", "event", "Reunion", "2026-11-10T11:00");
+  activity(db, "theirs", "other", "note", "Ajena", "");
+  const listed = await listNotes(d1, OWNER, {});
+  assert.equal(listed.ok, true);
+  if (!listed.ok) return;
+  assert.deepEqual(listed.data.items.map((item) => item.id), ["n1", "n2"]);
+  assert.equal(listed.data.items[0]?.occurredAt, null);
+  assert.deepEqual(listed.data.items[0]?.contactIds, ["mine"]);
+  const updated = await updateNote(d1, OWNER, { id: "n2", occurredAt: null, title: "  Ya sin fecha  " });
+  assert.equal(updated.ok, true);
+  if (!updated.ok) return;
+  assert.equal(updated.data.occurredAt, null);
+  assert.equal(updated.data.title, "Ya sin fecha");
+  const searched = await searchNotes(d1, OWNER, { query: "sin fecha" });
+  assert.equal(searched.ok, true);
+  if (searched.ok) assert.equal(searched.data.items[0]?.id, "n2");
+  assert.deepEqual(errorOf(await deleteNote(d1, OWNER, { id: "n2" })), { code: "invalid", message: "confirm required" });
+  assert.deepEqual(errorOf(await deleteNote(d1, OWNER, { id: "e1", confirm: true })), { code: "not_found", message: "not found" });
+  assert.deepEqual(errorOf(await deleteNote(d1, OWNER, { id: "theirs", confirm: true })), { code: "not_found", message: "not found" });
+  const deleted = await deleteNote(d1, OWNER, { id: "n2", confirm: true });
+  assert.deepEqual(deleted, { ok: true, data: { id: "n2", deleted: true } });
+  assert.equal((db.prepare("SELECT COUNT(*) AS n FROM activities WHERE id='n2'").get() as { n: number }).n, 0);
+  assert.equal((db.prepare("SELECT COUNT(*) AS n FROM activities WHERE id='e1'").get() as { n: number }).n, 1);
+});
+
+test("taskToUndatedNote converts an open task and can merge", async () => {
+  const { db, d1 } = setup();
+  contact(db, "mine", "owner", "Mia");
+  activity(db, "n1", "owner", "note", "Mia", "", { body: "Previo" });
+  db.prepare("INSERT INTO activity_contacts (activity_id,contact_id,user_id) VALUES (?,?,?)").run("n1", "mine", "owner");
+  const created = await createTask(d1, OWNER, { title: "Llamar", dueDate: "2026-11-09", contactId: "mine", description: "Por el bot" });
+  assert.equal(created.ok, true);
+  if (!created.ok) return;
+  const converted = await taskToUndatedNote(d1, OWNER, { taskId: created.data.id });
+  assert.equal(converted.ok, true);
+  if (!converted.ok) return;
+  assert.equal(converted.data.merged, true);
+  assert.equal(converted.data.note.id, "n1");
+  assert.equal(converted.data.note.occurredAt, null);
+  assert.deepEqual(converted.data.deletedTaskIds, [created.data.id]);
+  const row = db.prepare("SELECT body, occurred_at AS occurredAt FROM activities WHERE id='n1'").get() as { body: string; occurredAt: string };
+  assert.equal(row.occurredAt, "");
+  assert.match(row.body, /Previo/);
+  assert.match(row.body, /Llamar/);
+  assert.match(row.body, /Por el bot/);
+  assert.deepEqual(errorOf(await taskToUndatedNote(d1, OWNER, { taskId: created.data.id })), { code: "not_found", message: "not found" });
 });

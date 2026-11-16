@@ -6,6 +6,7 @@ import { ACCOUNTS_SQL, TX_VISIBLE } from "@/lib/finance";
 import { reconcileManual } from "@/lib/cuentix-sync";
 import { createRuleForTransaction, generateDue, isDateKey, parseRecurrence, todayInBuenosAires } from "@/lib/recurring";
 import { prepareActivityBody } from "@/lib/note-html";
+import { activityOccurredAt } from "@/lib/pending-notes";
 import { attachReceipt, receiptLinkable } from "@/lib/receipts-db";
 
 export const dynamic = "force-dynamic";
@@ -92,7 +93,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ res
       }
       case "activities": {
         const title = str(body.title,200), kind = oneOf(body.kind,["event","note"] as const,"note");
-        const occurredAt = str(body.occurredAt,32) || new Date().toISOString();
+        const when = activityOccurredAt(kind, body.occurredAt); if (!when.ok) return NextResponse.json({error:when.error}, {status:400});
+        const occurredAt = when.value;
         const contactIds = Array.isArray(body.contactIds) ? [...new Set(body.contactIds.map(v=>str(v,80)).filter(Boolean))] : [];
         if (!title) return NextResponse.json({error:"El título es obligatorio"},{status:400});
         if (contactIds.length) {

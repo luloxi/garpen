@@ -37,6 +37,7 @@ const COVERED = [
   "luma-events/route.ts",
   "note-media/route.ts",
   "note-media/[id]/route.ts",
+  "notes/from-pending/route.ts",
   "settings/luma/route.ts",
   "settings/luma/sync/route.ts",
   "push/subscribe/route.ts",
@@ -101,6 +102,7 @@ async function api() {
     luma: await import("../app/api/luma-events/route.ts"),
     lumaSettings: await import("../app/api/settings/luma/route.ts"),
     lumaSync: await import("../app/api/settings/luma/sync/route.ts"),
+    pendingNotes: await import("../app/api/notes/from-pending/route.ts"),
   };
 }
 
@@ -165,6 +167,7 @@ function hits(routes: Awaited<ReturnType<typeof api>>): Hit[] {
     { method: "PUT", mod: routes.lumaSettings, url: base + "/api/settings/luma", json: { url: "https://api.lu.ma/ics/nope" } },
     { method: "DELETE", mod: routes.lumaSettings, url: base + "/api/settings/luma" },
     { method: "POST", mod: routes.lumaSync, url: base + "/api/settings/luma/sync" },
+    { method: "POST", mod: routes.pendingNotes, url: base + "/api/notes/from-pending", json: { all: true } },
   );
   return out;
 }
@@ -348,5 +351,30 @@ test("a ticket over 1,4 MB is rejected and a smaller one is stored", async () =>
     const row = db.prepare("SELECT user_id AS userId, length(data) AS n FROM receipts WHERE id=?").get((stored.body as { receiptId: string }).receiptId) as { userId: string; n: number };
     assert.equal(row.userId, B);
     assert.ok(row.n < 1_900_000);
+  });
+});
+
+test("B cannot convert or un-date A's tasks and notes", async () => {
+  await locked(async () => {
+    const { db, d1 } = seedWorld();
+    setEnv(d1);
+    asUser(B);
+    const routes = await api();
+    const beforeTasks = db.prepare("SELECT id, user_id AS userId, title FROM tasks ORDER BY id").all() as { id: string; userId: string; title: string }[];
+    const beforeDate = (db.prepare("SELECT occurred_at AS o FROM activities WHERE id=?").get(ids.activityA) as { o: string }).o;
+    const alien = await call(routes.pendingNotes, "POST", base + "/api/notes/from-pending", { json: { taskId: ids.taskA } });
+    assert.equal(alien.status, 404);
+    const alienNote = await call(routes.pendingNotes, "POST", base + "/api/notes/from-pending", { json: { activityId: ids.activityA } });
+    assert.equal(alienNote.status, 404);
+    const converted = await call(routes.pendingNotes, "POST", base + "/api/notes/from-pending", { json: { all: true } });
+    assert.equal(converted.status, 200);
+    const aTask = db.prepare("SELECT title, status FROM tasks WHERE id=?").get(ids.taskA) as { title: string; status: string };
+    assert.equal(aTask.title, "A-SECRET-TASK");
+    assert.equal(aTask.status, "todo");
+    assert.equal((db.prepare("SELECT COUNT(*) AS n FROM tasks WHERE id=?").get(ids.taskB) as { n: number }).n, 0);
+    assert.equal((db.prepare("SELECT occurred_at AS o FROM activities WHERE id=?").get(ids.activityA) as { o: string }).o, beforeDate);
+    const aStill = beforeTasks.filter((row) => row.userId === A).map((row) => row.id);
+    const still = (db.prepare("SELECT id FROM tasks WHERE user_id=? ORDER BY id").all(A) as { id: string }[]).map((row) => row.id);
+    assert.deepEqual(still, aStill);
   });
 });
