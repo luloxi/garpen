@@ -6,6 +6,7 @@ import { encryptedAccount, encryptedWriteResponse, legacyDataContext, unauthoriz
 import { clearCounterpartLink, reconcileManual, unlinkTransaction } from "@/lib/cuentix-sync";
 import { createRuleForTransaction, generateDue, isDateKey, parseRecurrence, todayInBuenosAires } from "@/lib/recurring";
 import { prepareActivityBody } from "@/lib/note-html";
+import { activityOccurredAt } from "@/lib/pending-notes";
 import { attachReceipt, receiptLinkable } from "@/lib/receipts-db";
 
 export const dynamic = "force-dynamic";
@@ -54,7 +55,8 @@ export async function PATCH(request: Request, { params }: { params: Promise<{res
       }
       case "activities": {
         const title=str(b.title,200), kind=pick(b.kind,["event","note"] as const,"note");
-        const occurredAt=str(b.occurredAt,32) || new Date().toISOString();
+        const when=activityOccurredAt(kind,b.occurredAt); if(!when.ok) return NextResponse.json({error:when.error},{status:400});
+        const occurredAt=when.value;
         const contactIds=Array.isArray(b.contactIds)?[...new Set(b.contactIds.map(v=>str(v,80)).filter(Boolean))]:[];
         if(!title) return NextResponse.json({error:"El título es obligatorio"},{status:400});
         if(contactIds.length){

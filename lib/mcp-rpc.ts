@@ -2,6 +2,7 @@
 import type { D1Like } from "./finance.ts";
 import { resolveApprovedUser } from "./mailtox-link.ts";
 import { isDateKey } from "./recurring.ts";
+import { clearNoteDate, convertTaskToNote, isUndatedOccurredAt } from "./pending-notes.ts";
 
 export type RpcErrorCode = "no_owner" | "encrypted_account" | "invalid" | "not_found" | "not_enabled" | "internal";
 export type RpcResult<T> = { ok: true; data: T } | { ok: false; error: { code: RpcErrorCode; message: string } };
@@ -35,6 +36,14 @@ export type AgendaEvent = {
   title: string;
   body: string | null;
   occurredAt: string;
+  contactIds: string[];
+  updatedAt: number;
+};
+export type Note = {
+  id: string;
+  title: string;
+  body: string | null;
+  occurredAt: string | null;
   contactIds: string[];
   updatedAt: number;
 };
@@ -653,3 +662,305 @@ export async function searchInquiries(db: D1Like, ownerEmail: string | undefined
     return ok({ items: listed.rows.map(mapInquiry), nextOffset: listed.nextOffset });
   });
 }
+
+function requiredId(value: unknown): { ok: true; id: string } | { ok: false; message: string } {
+  if (typeof value !== "string") return { ok: false, message: "invalid id" };
+  const id = value.trim();
+  if (!id || id.length > ID_MAX) return { ok: false, message: "invalid id" };
+  return { ok: true, id };
+}
+
+function requireConfirm(value: unknown): { ok: true } | { ok: false; message: string } {
+  if (value !== true) return { ok: false, message: "confirm required" };
+  return { ok: true };
+}
+
+function hasOwn(input: Record<string, unknown>, key: string): boolean {
+  return Object.prototype.hasOwnProperty.call(input, key);
+}
+
+function mapNote(row: EventRow, contactIds: string[]): Note {
+  const occurred = String(row.occurredAt);
+  return {
+    id: String(row.id),
+    title: String(row.title),
+    body: textOrNull(row.body),
+    occurredAt: isUndatedOccurredAt(occurred) ? null : occurred,
+    contactIds,
+    updatedAt: num(row.updatedAt),
+  };
+}
+
+async function mapNotes(db: D1Like, userId: string, rows: EventRow[]): Promise<Note[]> {
+  const links = await contactIdsFor(db, userId, rows.map((row) => String(row.id)));
+  return rows.map((row) => mapNote(row, links.get(String(row.id)) ?? []));
+}
+
+async function notePage(db: D1Like, userId: string, where: string[], binds: unknown[], page: PageMeta): Promise<Page<Note>> {
+  const listed = await queryPage<EventRow>(
+    db,
+    EVENT_SELECT + " WHERE " + where.join(" AND ") + " ORDER BY CASE WHEN trim(ifnull(a.occurred_at,''))='' THEN 0 ELSE 1 END, a.occurred_at DESC, a.created_at DESC, a.id DESC LIMIT ? OFFSET ?",
+    binds,
+    page,
+  );
+  return { items: await mapNotes(db, userId, listed.rows), nextOffset: listed.nextOffset };
+}
+
+export async function listNotes(db: D1Like, ownerEmail: string | undefined, input: unknown = {}): Promise<RpcResult<Page<Note>>> {
+  return run(async () => {
+    const owner = await ownerId(db, ownerEmail);
+    if (!owner.ok) return owner.result;
+    const body = record(input);
+    if (!body) return invalid("invalid input");
+    const from = optionalWhen(body, "from");
+    if (!from.ok) return invalid("invalid date range");
+    const to = optionalWhen(body, "to");
+    if (!to.ok) return invalid("invalid date range");
+    if (from.value && to.value && !rangeOk(from.value, to.value)) return invalid("invalid date range");
+    const page = parsePage(body);
+    if (!page.ok) return invalid(page.message);
+    const where = ["a.user_id=?", "a.kind='note'"];
+    const binds: unknown[] = [owner.userId];
+    if (from.value || to.value) {
+      const range: string[] = ["trim(ifnull(a.occurred_at,''))=''"];
+      const dated: string[] = ["trim(ifnull(a.occurred_at,''))!=''"];
+      const datedBinds: unknown[] = [];
+      pushRange(dated, datedBinds, from.value, to.value);
+      where.push("(" + range[0] + " OR (" + dated.join(" AND ") + "))");
+      binds.push(...datedBinds);
+    }
+    return ok(await notePage(db, owner.userId, where, binds, page));
+  });
+}
+
+export async function searchNotes(db: D1Like, ownerEmail: string | undefined, input: unknown = {}): Promise<RpcResult<Page<Note>>> {
+  return run(async () => {
+    const owner = await ownerId(db, ownerEmail);
+    if (!owner.ok) return owner.result;
+    const body = record(input);
+    if (!body) return invalid("invalid input");
+    const query = parseQuery(body.query);
+    if (!query.ok) return invalid(query.message);
+    const from = optionalWhen(body, "from");
+    if (!from.ok) return invalid("invalid date range");
+    const to = optionalWhen(body, "to");
+    if (!to.ok) return invalid("invalid date range");
+    if (from.value && to.value && !rangeOk(from.value, to.value)) return invalid("invalid date range");
+    const page = parsePage(body);
+    if (!page.ok) return invalid(page.message);
+    const where = ["a.user_id=?", "a.kind='note'"];
+    const binds: unknown[] = [owner.userId];
+    if (from.value || to.value) {
+      const dated: string[] = ["trim(ifnull(a.occurred_at,''))!=''"];
+      const datedBinds: unknown[] = [];
+      pushRange(dated, datedBinds, from.value, to.value);
+      where.push("(trim(ifnull(a.occurred_at,''))='' OR (" + dated.join(" AND ") + "))");
+      binds.push(...datedBinds);
+    }
+    where.push(likeAny(["a.title", "a.body"], binds, query.query));
+    return ok(await notePage(db, owner.userId, where, binds, page));
+  });
+}
+
+async function loadTask(db: D1Like, userId: string, id: string): Promise<TaskRow | null> {
+  return db.prepare(TASK_SELECT + " WHERE user_id=? AND id=?").bind(userId, id).first<TaskRow>();
+}
+
+async function loadNote(db: D1Like, userId: string, id: string): Promise<EventRow | null> {
+  return db.prepare(EVENT_SELECT + " WHERE a.user_id=? AND a.id=? AND a.kind='note'").bind(userId, id).first<EventRow>();
+}
+
+export async function updateTask(db: D1Like, ownerEmail: string | undefined, input: unknown = {}): Promise<RpcResult<Task>> {
+  return run(async () => {
+    const owner = await ownerId(db, ownerEmail);
+    if (!owner.ok) return owner.result;
+    const body = record(input);
+    if (!body) return invalid("invalid input");
+    const id = requiredId(body.id);
+    if (!id.ok) return invalid(id.message);
+    const existing = await loadTask(db, owner.userId, id.id);
+    if (!existing) return fail("not_found", "not found");
+    const current = mapTask(existing);
+    let title = current.title;
+    let description = current.description;
+    let status = current.status;
+    let priority = current.priority;
+    let dueDate = current.dueDate;
+    let contactId = current.contactId;
+    if (hasOwn(body, "title")) {
+      const parsed = requiredText(body.title, TITLE_MAX, "title");
+      if (!parsed.ok) return invalid(parsed.message);
+      title = parsed.value;
+    }
+    if (hasOwn(body, "description")) {
+      const parsed = optionalText(body.description, DESCRIPTION_MAX, "description");
+      if (!parsed.ok) return invalid(parsed.message);
+      description = parsed.value;
+    }
+    if (hasOwn(body, "status")) {
+      const parsed = parseEnum(body.status, TASK_STATUSES, "status");
+      if (!parsed.ok || !parsed.value) return invalid("invalid status");
+      status = parsed.value;
+    }
+    if (hasOwn(body, "priority")) {
+      const parsed = parseEnum(body.priority, TASK_PRIORITIES, "priority");
+      if (!parsed.ok || !parsed.value) return invalid("invalid priority");
+      priority = parsed.value;
+    }
+    if (hasOwn(body, "dueDate")) {
+      const parsed = optionalDate(body.dueDate, "due date");
+      if (!parsed.ok) return invalid(parsed.message);
+      dueDate = parsed.value;
+    }
+    if (hasOwn(body, "contactId")) {
+      const contact = optionalId(body.contactId);
+      if (!contact.ok) return invalid("invalid contact");
+      if (contact.id && !(await contactOwned(db, owner.userId, contact.id))) return invalid("invalid contact");
+      contactId = contact.id;
+    }
+    const now = Date.now();
+    const result = await db.prepare("UPDATE tasks SET title=?,description=?,status=?,priority=?,due_date=?,contact_id=?,updated_at=? WHERE id=? AND user_id=?").bind(title, description, status, priority, dueDate, contactId, now, id.id, owner.userId).run();
+    if ((result.meta.changes ?? 0) < 1) return fail("not_found", "not found");
+    return ok({ id: id.id, title, description, status, priority, dueDate, contactId, updatedAt: now });
+  });
+}
+
+export async function deleteTask(db: D1Like, ownerEmail: string | undefined, input: unknown = {}): Promise<RpcResult<{ id: string; deleted: true }>> {
+  return run(async () => {
+    const owner = await ownerId(db, ownerEmail);
+    if (!owner.ok) return owner.result;
+    const body = record(input);
+    if (!body) return invalid("invalid input");
+    const confirmed = requireConfirm(body.confirm);
+    if (!confirmed.ok) return invalid(confirmed.message);
+    const id = requiredId(body.id);
+    if (!id.ok) return invalid(id.message);
+    const result = await db.prepare("DELETE FROM tasks WHERE id=? AND user_id=?").bind(id.id, owner.userId).run();
+    if ((result.meta.changes ?? 0) < 1) return fail("not_found", "not found");
+    return ok({ id: id.id, deleted: true });
+  });
+}
+
+async function parseContactIds(db: D1Like, userId: string, value: unknown): Promise<{ ok: true; ids: string[] } | { ok: false; message: string }> {
+  if (value === undefined) return { ok: true, ids: [] };
+  if (!Array.isArray(value)) return { ok: false, message: "invalid contact" };
+  const contactIds: string[] = [];
+  const seen = new Set<string>();
+  for (const item of value) {
+    if (typeof item !== "string") return { ok: false, message: "invalid contact" };
+    const id = item.trim();
+    if (!id || seen.has(id)) continue;
+    if (id.length > ID_MAX) return { ok: false, message: "invalid contact" };
+    seen.add(id);
+    contactIds.push(id);
+  }
+  if (contactIds.length > 0) {
+    const marks = contactIds.map(() => "?").join(",");
+    const linked = await db.prepare("SELECT COUNT(*) AS count FROM contacts WHERE user_id=? AND id IN (" + marks + ")").bind(userId, ...contactIds).first<{ count: number | bigint }>();
+    if (Number(linked?.count ?? 0) !== contactIds.length) return { ok: false, message: "invalid contact" };
+  }
+  return { ok: true, ids: contactIds };
+}
+
+export async function updateNote(db: D1Like, ownerEmail: string | undefined, input: unknown = {}): Promise<RpcResult<Note>> {
+  return run(async () => {
+    const owner = await ownerId(db, ownerEmail);
+    if (!owner.ok) return owner.result;
+    const body = record(input);
+    if (!body) return invalid("invalid input");
+    const id = requiredId(body.id);
+    if (!id.ok) return invalid(id.message);
+    const existing = await loadNote(db, owner.userId, id.id);
+    if (!existing) return fail("not_found", "not found");
+    const currentIds = (await contactIdsFor(db, owner.userId, [id.id])).get(id.id) ?? [];
+    let title = String(existing.title);
+    let notes = textOrNull(existing.body);
+    let occurredAt = isUndatedOccurredAt(String(existing.occurredAt)) ? null : String(existing.occurredAt);
+    let contactIds = currentIds;
+    if (hasOwn(body, "title")) {
+      const parsed = requiredText(body.title, TITLE_MAX, "title");
+      if (!parsed.ok) return invalid(parsed.message);
+      title = parsed.value;
+    }
+    if (hasOwn(body, "body")) {
+      const parsed = optionalText(body.body, BODY_MAX, "body");
+      if (!parsed.ok) return invalid(parsed.message);
+      notes = parsed.value;
+    }
+    if (hasOwn(body, "occurredAt")) {
+      if (body.occurredAt === null || body.occurredAt === "") occurredAt = null;
+      else {
+        const when = parseWhen(body.occurredAt);
+        if (!when) return invalid("invalid occurredAt");
+        occurredAt = when.raw;
+      }
+    }
+    if (hasOwn(body, "contactIds")) {
+      const parsed = await parseContactIds(db, owner.userId, body.contactIds);
+      if (!parsed.ok) return invalid(parsed.message);
+      contactIds = parsed.ids;
+    }
+    const now = Date.now();
+    const stored = occurredAt ?? "";
+    const update = db.prepare("UPDATE activities SET title=?,body=?,occurred_at=?,updated_at=? WHERE id=? AND user_id=? AND kind='note'").bind(title, notes, stored, now, id.id, owner.userId);
+    const statements = [update];
+    if (hasOwn(body, "contactIds")) {
+      statements.push(db.prepare("DELETE FROM activity_contacts WHERE activity_id=? AND user_id=?").bind(id.id, owner.userId));
+      for (const contactId of contactIds) statements.push(db.prepare("INSERT INTO activity_contacts (activity_id,contact_id,user_id) VALUES (?,?,?)").bind(id.id, contactId, owner.userId));
+    }
+    const wrote = db.batch ? await db.batch(statements) : await Promise.all(statements.map((statement) => statement.run()));
+    if ((wrote[0]?.meta.changes ?? 0) < 1) return fail("not_found", "not found");
+    return ok({ id: id.id, title, body: notes, occurredAt, contactIds, updatedAt: now });
+  });
+}
+
+export async function deleteNote(db: D1Like, ownerEmail: string | undefined, input: unknown = {}): Promise<RpcResult<{ id: string; deleted: true }>> {
+  return run(async () => {
+    const owner = await ownerId(db, ownerEmail);
+    if (!owner.ok) return owner.result;
+    const body = record(input);
+    if (!body) return invalid("invalid input");
+    const confirmed = requireConfirm(body.confirm);
+    if (!confirmed.ok) return invalid(confirmed.message);
+    const id = requiredId(body.id);
+    if (!id.ok) return invalid(id.message);
+    const result = await db.prepare("DELETE FROM activities WHERE id=? AND user_id=? AND kind='note'").bind(id.id, owner.userId).run();
+    if ((result.meta.changes ?? 0) < 1) return fail("not_found", "not found");
+    return ok({ id: id.id, deleted: true });
+  });
+}
+
+export async function taskToUndatedNote(db: D1Like, ownerEmail: string | undefined, input: unknown = {}): Promise<RpcResult<{ note: Note; deletedTaskIds: string[]; merged: boolean }>> {
+  return run(async () => {
+    const owner = await ownerId(db, ownerEmail);
+    if (!owner.ok) return owner.result;
+    const body = record(input);
+    if (!body) return invalid("invalid input");
+    const id = requiredId(body.taskId ?? body.id);
+    if (!id.ok) return invalid(id.message);
+    const result = await convertTaskToNote(db, owner.userId, id.id);
+    if ("error" in result) return fail("not_found", "not found");
+    const note = result.notes[0];
+    if (!note) return fail("not_found", "not found");
+    return ok({
+      note: { id: note.id, title: note.title, body: note.body, occurredAt: null, contactIds: note.contactIds, updatedAt: Date.now() },
+      deletedTaskIds: result.convertedTaskIds,
+      merged: note.merged,
+    });
+  });
+}
+
+export async function clearNoteDateRpc(db: D1Like, ownerEmail: string | undefined, input: unknown = {}): Promise<RpcResult<{ id: string; occurredAt: null }>> {
+  return run(async () => {
+    const owner = await ownerId(db, ownerEmail);
+    if (!owner.ok) return owner.result;
+    const body = record(input);
+    if (!body) return invalid("invalid input");
+    const id = requiredId(body.id);
+    if (!id.ok) return invalid(id.message);
+    const result = await clearNoteDate(db, owner.userId, id.id);
+    if ("error" in result) return fail("not_found", "not found");
+    return ok({ id: id.id, occurredAt: null });
+  });
+}
+

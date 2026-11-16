@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { ArrowDown, ArrowUp, CalendarClock, Check, ChevronLeft, ChevronRight, Clock, Maximize2, NotebookPen } from "lucide-react";
+import { ArrowDown, ArrowUp, CalendarClock, CalendarOff, Check, ChevronLeft, ChevronRight, Clock, Maximize2, NotebookPen, Trash2 } from "lucide-react";
 import MonthHeading from "@/app/month-heading";
 import { dayChip, shortDate, todayBA } from "@/lib/agenda-dates";
 import { isRichNoteHtml, sanitizeNoteHtml } from "@/lib/note-html";
@@ -67,10 +67,12 @@ export function NoteContent({ source }: { source: string }) {
   return <Markdown source={source} />;
 }
 
-export default function Agenda({ tasks, activities, onToggleTask, onEditTask, onEditActivity, onDeleteTask, onDeleteActivity, taskPending, timeByTask = {}, tab, filter, month, day, noteId, noteOpen, onNav, onOpenNote, onCloseNote }: {
+export default function Agenda({ tasks, activities, onToggleTask, onEditTask, onEditActivity, onDeleteTask, onDeleteActivity, onConvertTask, onClearNoteDate, onConvertAll, openPendingCount = 0, taskPending, timeByTask = {}, tab, filter, month, day, noteId, noteOpen, onNav, onOpenNote, onCloseNote }: {
   tasks: AgendaItem[]; activities: AgendaItem[];
   onToggleTask: (t: AgendaItem) => void; onEditTask: (t: AgendaItem) => void; onEditActivity: (a: AgendaItem) => void;
-  onDeleteTask: (t: AgendaItem) => void; onDeleteActivity: (a: AgendaItem) => void; taskPending?: string | null;
+  onDeleteTask: (t: AgendaItem) => void; onDeleteActivity: (a: AgendaItem) => void;
+  onConvertTask: (t: AgendaItem) => void; onClearNoteDate: (a: AgendaItem) => void; onConvertAll: () => void; openPendingCount?: number;
+  taskPending?: string | null;
   timeByTask?: Record<string, number>;
   tab: Tab;
   filter: "all" | Kind;
@@ -115,6 +117,11 @@ export default function Agenda({ tasks, activities, onToggleTask, onEditTask, on
       {tracked > 0 && <span className="agenda-tracked" title="Tiempo registrado en esta tarea" aria-label={"Tiempo registrado en esta tarea: " + formatTracked(tracked)}><Clock size={13} strokeWidth={1.75} aria-hidden="true" />{formatTracked(tracked)}</span>}
       {e.time && <time className="agenda-time" title="Hora">{e.time}</time>}
       {overdueDate && <time className="agenda-time is-overdue" title="Venció el">{overdueDate}</time>}
+      <span className="agenda-item-actions">
+        {e.kind === "task" && isOpenTask(e) && <button type="button" className="agenda-item-btn" title="Quitar fecha / pasar a nota" aria-label="Quitar fecha / pasar a nota" onClick={() => onConvertTask(e.source)}><CalendarOff size={15} /></button>}
+        {e.kind === "note" && !!e.day && <button type="button" className="agenda-item-btn" title="Quitar fecha" aria-label="Quitar fecha" onClick={() => onClearNoteDate(e.source)}><CalendarOff size={15} /></button>}
+        <button type="button" className="agenda-item-btn is-danger" title="Eliminar" aria-label="Eliminar" onClick={() => e.kind === "task" ? onDeleteTask(e.source) : onDeleteActivity(e.source)}><Trash2 size={15} /></button>
+      </span>
     </div>;
   }
 
@@ -209,9 +216,7 @@ export default function Agenda({ tasks, activities, onToggleTask, onEditTask, on
       return <div key={day} className={"agenda-day-block" + (past ? " is-past" : "")}>
         <h4 ref={isToday ? todayRef : undefined} id={isToday ? "agenda-hoy" : undefined} className={"agenda-day" + (isToday ? " is-today" : "")}>{dayChip(day, today)}</h4>
         {items.length === 0 && isToday && <p className="agenda-nothing">Nada para hoy</p>}
-        {items.map(e => list
-          ? <div key={e.key} className="agenda-list-item">{renderRow(e)}<span className="row-actions"><button type="button" onClick={() => e.kind === "task" ? onDeleteTask(e.source) : onDeleteActivity(e.source)} aria-label="Eliminar" title="Eliminar">Eliminar</button></span></div>
-          : <div key={e.key} className="agenda-row-wrap">{renderRow(e)}</div>)}
+        {items.map(e => <div key={e.key} className={list ? "agenda-list-item" : "agenda-row-wrap"}>{renderRow(e)}</div>)}
       </div>;
     };
     const overdueBlock = t.overdueList.length > 0 && <div ref={overdueRef} className="agenda-overdue-block is-overdue"><h3 className="agenda-overdue-head">Vencidas · {t.overdueList.length}</h3>{t.overdueList.map(e => <div key={e.key} className="agenda-row-wrap">{renderRow(e, shortDate(e.day))}</div>)}</div>;
@@ -251,6 +256,7 @@ export default function Agenda({ tasks, activities, onToggleTask, onEditTask, on
       {([["general", "General"], ["calendar", "Calendario"], ["list", "Lista"]] as [Tab, string][]).map(([id, label]) =>
         <button key={id} type="button" role="tab" aria-selected={tab === id} className={tab === id ? "selected" : ""} onClick={() => onNav({ agendaTab: id }, "push")}>{label}</button>)}
     </div>
+    {openPendingCount > 0 && <div className="agenda-toolbar"><button type="button" className="secondary-button pending-to-notes" onClick={onConvertAll}>Pasar todos los pendientes a notas sin fecha</button></div>}
 
     {tab === "general" && <>
       {empty && <div className="panel"><p className="empty-copy">Todavía no hay tareas, eventos ni notas. Usá el + para agregar la primera.</p></div>}
@@ -300,9 +306,11 @@ export default function Agenda({ tasks, activities, onToggleTask, onEditTask, on
     {reading && <div className="modal-backdrop note-reader-backdrop" role="presentation">
       <section className="note-reader" role="dialog" aria-modal="true" aria-label={String(reading.title)}>
         <header>
-          <div><h2>{String(reading.title)}</h2><small>{new Date(String(reading.occurredAt).replace(" ", "T")).toLocaleString("es-AR", { dateStyle: "medium", timeStyle: "short" })}{reading.contactNames ? " · " + String(reading.contactNames) : ""}</small></div>
+          <div><h2>{String(reading.title)}</h2><small>{String(reading.occurredAt || "").trim() ? new Date(String(reading.occurredAt).replace(" ", "T")).toLocaleString("es-AR", { dateStyle: "medium", timeStyle: "short" }) : "Sin fecha"}{reading.contactNames ? " · " + String(reading.contactNames) : ""}</small></div>
           <div className="note-reader-actions">
+            {String(reading.occurredAt || "").trim() ? <button type="button" className="secondary-button compact" onClick={() => onClearNoteDate(reading)}><CalendarOff size={14} /> Quitar fecha</button> : null}
             <button type="button" className="secondary-button compact" onClick={() => onEditActivity(reading)}><Maximize2 size={14} /> Editar</button>
+            <button type="button" className="icon-button is-danger" aria-label="Eliminar" title="Eliminar" onClick={() => onDeleteActivity(reading)}><Trash2 size={16} /></button>
             <button type="button" className="icon-button" aria-label="Cerrar" title="Cerrar" onClick={onCloseNote}>×</button>
           </div>
         </header>
