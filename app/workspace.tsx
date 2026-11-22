@@ -215,7 +215,7 @@ export default function Workspace({name,email,image,isAdmin,e2e=false,e2eMenu,us
   const totals=useMemo(()=>({openTasks:tasks.filter(t=>t.status!=="done"&&t.status!=="cancelled").length,activeProjects:projects.filter(p=>p.status==="active").length}),[tasks,projects]);
   const todayKey=new Date().toLocaleDateString("sv-SE");
   const openTasks=useMemo(()=>tasks.filter(t=>t.status!=="done"&&t.status!=="cancelled").sort((a,b)=>(a.dueDate?0:1)-(b.dueDate?0:1)||String(a.dueDate||"").localeCompare(String(b.dueDate||""))),[tasks]);
-  const homeTasks=useMemo(()=>openTasks.slice(0,8),[openTasks]);
+  const homeTasks=useMemo(()=>openTasks.slice(0,10),[openTasks]);
   const timeByTask=useMemo(()=>{const m:Record<string,number>={};for(const e of timeEntries)if(e.taskId)m[e.taskId]=(m[e.taskId]||0)+Number(e.durationMs||0);return m;},[timeEntries]);
   const homeKpis:{id:string;icon:typeof Users;value:number;tip:string;go:Section}[]=[
     {id:"contacts",icon:Users,value:contacts.length,tip:"Contactos en tu CRM",go:"contacts"},
@@ -545,7 +545,7 @@ export default function Workspace({name,email,image,isAdmin,e2e=false,e2eMenu,us
           {homeKpis.map(k=>{const Icon=k.icon;return <button type="button" key={k.id} className="home-kpi" data-tip={k.tip} title={k.tip} aria-label={k.tip} onClick={()=>go({section:k.go})}><Icon size={18} strokeWidth={2.1} aria-hidden="true"/><strong>{k.value}</strong></button>;})}
         </div>
         {docs.homeAlert}
-        <section className="panel home-panel"><div className="home-panel-head"><h3>Próximas tareas</h3>{openTasks.length>0&&<button type="button" className="text-button pending-to-notes" title="Pasar todos los pendientes a notas sin fecha" onClick={()=>void convertAllPending()}>Pasar a notas sin fecha</button>}<button type="button" className="icon-link" title="Ver agenda" aria-label="Ver agenda" onClick={()=>go({section:"activity"})}><ArrowRight size={18} aria-hidden="true"/></button></div>
+        <section className="panel home-panel"><div className="home-panel-head"><h3>Próximos</h3>{openTasks.length>0&&<button type="button" className="text-button pending-to-notes" title="Pasar todos los pendientes a notas sin fecha" onClick={()=>void convertAllPending()}>Pasar a notas sin fecha</button>}<button type="button" className="icon-link" title="Ver agenda" aria-label="Ver agenda" onClick={()=>go({section:"activity"})}><ArrowRight size={18} aria-hidden="true"/></button></div>
           {homeTasks.length===0?<p className="empty-copy" title="Creá una con el botón +">Sin tareas abiertas</p>:homeTasks.map(t=>{const overdue=!!t.dueDate&&String(t.dueDate)<todayKey;return <div className="home-task" key={t.id}>
             <button type="button" className={"home-check "+String(t.priority)} title={"Marcar como hecha · Prioridad "+labelStatus(t.priority).toLowerCase()} aria-label={"Marcar como hecha: "+String(t.title)} disabled={!!taskPending} onClick={()=>void toggleTask(t)}/>
             <button type="button" className="home-task-title" title={String(t.title)} onClick={()=>go({section:"activity"})}>{String(t.title)}</button>
