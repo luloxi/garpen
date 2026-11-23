@@ -5,6 +5,8 @@ import {
   createEvent,
   createTask,
   deleteNote,
+  convertItem,
+  createNote,
   deleteTask,
   listContacts,
   listEvents,
@@ -93,6 +95,11 @@ function toolsFor(db: D1Like, email: string): McpToolDef[] {
     { name: "garpen_task_to_undated_note", description: "Turn an open task into a note without a date. If the contact already has an undated note, the text is appended there.", inputSchema: jsonSchemaObject({
       taskId: { type: "string" },
     }, ["taskId"]), annotations: { readOnlyHint: false, destructiveHint: false, title: "Task to undated note" }, run: run(taskToUndatedNote) },
+    { name: "garpen_convert_item", description: "Change an item between task, event and note. Keeps what they share (title, body/description, date, contact) and drops fields that only exist on the source type. Use this to reclassify something.", inputSchema: jsonSchemaObject({
+      id: { type: "string" },
+      from: { type: "string", enum: ["task", "event", "note"] },
+      to: { type: "string", enum: ["task", "event", "note"] },
+    }, ["id", "from", "to"]), annotations: { readOnlyHint: false, destructiveHint: false, title: "Convert item type" }, run: run(convertItem) },
     { name: "garpen_list_notes", description: "List your notes. Undated notes are included. Optional from/to filters dated notes only.", inputSchema: jsonSchemaObject({ from: { type: "string" }, to: { type: "string" }, ...pageProps }), annotations: { readOnlyHint: true, title: "List notes" }, run: run(listNotes) },
     { name: "garpen_search_notes", description: "Search your notes.", inputSchema: jsonSchemaObject({ ...queryProps, from: { type: "string" }, to: { type: "string" }, ...pageProps }, ["query"]), annotations: { readOnlyHint: true, title: "Search notes" }, run: run(searchNotes) },
     { name: "garpen_update_note", description: "Update one of your notes. Pass occurredAt null to remove the date.", inputSchema: jsonSchemaObject({
@@ -106,6 +113,12 @@ function toolsFor(db: D1Like, email: string): McpToolDef[] {
       id: { type: "string" },
       confirm: { type: "boolean", description: "Must be true to delete" },
     }, ["id", "confirm"]), annotations: { readOnlyHint: false, destructiveHint: true, title: "Delete note" }, run: run(deleteNote) },
+    { name: "garpen_create_note", description: "Create a note. Without occurredAt it is an undated note.", inputSchema: jsonSchemaObject({
+      title: { type: "string", minLength: 1, maxLength: 200 },
+      body: { type: "string" },
+      occurredAt: { type: "string" },
+      contactIds: { type: "array", items: { type: "string" } },
+    }, ["title"]), annotations: { readOnlyHint: false, destructiveHint: false, title: "Create note" }, run: run(createNote) },
     { name: "garpen_list_events", description: "List your agenda events in a from/to range.", inputSchema: jsonSchemaObject({ from: { type: "string" }, to: { type: "string" }, ...pageProps }, ["from", "to"]), annotations: { readOnlyHint: true, title: "List events" }, run: run(listEvents) },
     { name: "garpen_search_events", description: "Search your agenda events.", inputSchema: jsonSchemaObject({ ...queryProps, from: { type: "string" }, to: { type: "string" }, ...pageProps }, ["query"]), annotations: { readOnlyHint: true, title: "Search events" }, run: run(searchEvents) },
     { name: "garpen_create_event", description: "Create an agenda event in your Garpen account.", inputSchema: jsonSchemaObject({

@@ -1,5 +1,6 @@
 // Garpen McpRpc. Pure logic (no Next.js or Cloudflare imports) so node:test can load it.
-import type { D1Like } from "./finance.ts";
+import type { D1Bound, D1Like } from "./finance.ts";
+import { UNDATED_OCCURRED_AT } from "./pending-notes.ts";
 import { resolveApprovedUser } from "./mailtox-link.ts";
 import { isDateKey } from "./recurring.ts";
 import { clearNoteDate, convertTaskToNote, isUndatedOccurredAt } from "./pending-notes.ts";
@@ -618,6 +619,53 @@ export async function createEvent(db: D1Like, ownerEmail: string | undefined, in
   });
 }
 
+/** Create a note (activity kind="note"). No date means an undated note (occurred_at=""). */
+export async function createNote(db: D1Like, ownerEmail: string | undefined, input: unknown = {}): Promise<RpcResult<Note>> {
+  return run(async () => {
+    const owner = await ownerId(db, ownerEmail);
+    if (!owner.ok) return owner.result;
+    const body = record(input);
+    if (!body) return invalid("invalid input");
+    const title = requiredText(body.title, TITLE_MAX, "title");
+    if (!title.ok) return invalid(title.message);
+    const text = optionalText(body.body, BODY_MAX, "body");
+    if (!text.ok) return invalid(text.message);
+    let when: string = UNDATED_OCCURRED_AT;
+    if (body.occurredAt !== undefined && body.occurredAt !== null && body.occurredAt !== "") {
+      const parsed = parseWhen(body.occurredAt);
+      if (!parsed) return invalid("invalid occurredAt");
+      when = parsed.raw;
+    }
+    const contactIds: string[] = [];
+    if (body.contactIds !== undefined) {
+      if (!Array.isArray(body.contactIds)) return invalid("invalid contact");
+      const seen = new Set<string>();
+      for (const value of body.contactIds) {
+        if (typeof value !== "string") return invalid("invalid contact");
+        const cid = value.trim();
+        if (!cid || seen.has(cid)) continue;
+        if (cid.length > ID_MAX) return invalid("invalid contact");
+        seen.add(cid);
+        contactIds.push(cid);
+      }
+    }
+    if (contactIds.length > 0) {
+      const marks = contactIds.map(() => "?").join(",");
+      const linked = await db.prepare("SELECT COUNT(*) AS count FROM contacts WHERE user_id=? AND id IN (" + marks + ")").bind(owner.userId, ...contactIds).first<{ count: number | bigint }>();
+      if (Number(linked?.count ?? 0) !== contactIds.length) return invalid("invalid contact");
+    }
+    const id = crypto.randomUUID();
+    const now = Date.now();
+    const statements: D1Bound[] = [
+      db.prepare("INSERT INTO activities (id,user_id,kind,title,body,occurred_at,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?)").bind(id, owner.userId, "note", title.value, text.value, when, now, now),
+      ...contactIds.map((contactId) => db.prepare("INSERT INTO activity_contacts (activity_id,contact_id,user_id) VALUES (?,?,?)").bind(id, contactId, owner.userId)),
+    ];
+    const wrote = await executeAll(db, statements);
+    if ((wrote[0]?.meta.changes ?? 0) < 1) return internal();
+    return ok({ id, title: title.value, body: text.value, occurredAt: when ? when : null, contactIds, updatedAt: now });
+  });
+}
+
 export async function listInquiries(db: D1Like, ownerEmail: string | undefined, input: unknown = {}): Promise<RpcResult<Page<Inquiry>>> {
   return run(async () => {
     const owner = await ownerId(db, ownerEmail);
@@ -964,3 +1012,81 @@ export async function clearNoteDateRpc(db: D1Like, ownerEmail: string | undefine
   });
 }
 
+
+export const ITEM_KINDS = ["task", "event", "note"] as const;
+export type ItemKind = (typeof ITEM_KINDS)[number];
+
+async function executeAll(db: D1Like, statements: D1Bound[]): Promise<Array<{ meta: { changes: number } }>> {
+  if (db.batch) return db.batch(statements);
+  return Promise.all(statements.map((statement) => statement.run()));
+}
+
+/**
+ * Change an item between task, event and note.
+ * Keeps what the three share (title, body/description, date, contact) and drops the
+ * fields that only exist on the source type. Creates the target and removes the source,
+ * so the id changes. A note with no date uses occurred_at = "" (that is how Garpen
+ * stores undated notes); an event always needs a date.
+ */
+export async function convertItem(db: D1Like, ownerEmail: string | undefined, input: unknown = {}): Promise<RpcResult<{ from: ItemKind; to: ItemKind; id: string; title: string; removedId: string }>> {
+  return run(async () => {
+    const owner = await ownerId(db, ownerEmail);
+    if (!owner.ok) return owner.result;
+    const body = record(input);
+    if (!body) return invalid("invalid input");
+    const id = requiredId(body.id);
+    if (!id.ok) return invalid(id.message);
+    const from = parseEnum(body.from, ITEM_KINDS, "from");
+    if (!from.ok || !from.value) return invalid(from.message);
+    const to = parseEnum(body.to, ITEM_KINDS, "to");
+    if (!to.ok || !to.value) return invalid(to.message);
+    const target = to.value;
+    if (from.value === target) return invalid("from and to are the same");
+    const now = Date.now();
+    const newId = crypto.randomUUID();
+    const statements: D1Bound[] = [];
+
+    if (from.value === "task") {
+      const task = await db.prepare("SELECT id, title, description, status, priority, due_date AS dueDate, contact_id AS contactId FROM tasks WHERE user_id=? AND id=?").bind(owner.userId, id.id).first<TaskRow>();
+      if (!task) return fail("not_found", "not found");
+      const title = String(task.title ?? "").slice(0, TITLE_MAX);
+      const text = task.description ? String(task.description) : null;
+      const due = task.dueDate ? String(task.dueDate).slice(0, 10) : "";
+      const contact = task.contactId ? String(task.contactId) : null;
+      if (target === "event") {
+        if (!due) return invalid("a task without a due date cannot become an event");
+        statements.push(db.prepare("INSERT INTO activities (id,user_id,kind,title,body,occurred_at,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?)").bind(newId, owner.userId, "event", title, text, due, now, now));
+        if (contact) statements.push(db.prepare("INSERT INTO activity_contacts (activity_id,contact_id,user_id) VALUES (?,?,?)").bind(newId, contact, owner.userId));
+      } else {
+        statements.push(db.prepare("INSERT INTO activities (id,user_id,kind,title,body,occurred_at,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?)").bind(newId, owner.userId, "note", title, text, due, now, now));
+        if (contact) statements.push(db.prepare("INSERT INTO activity_contacts (activity_id,contact_id,user_id) VALUES (?,?,?)").bind(newId, contact, owner.userId));
+      }
+      statements.push(db.prepare("DELETE FROM tasks WHERE user_id=? AND id=?").bind(owner.userId, id.id));
+      const wrote = await executeAll(db, statements);
+      if ((wrote[0]?.meta.changes ?? 0) < 1) return internal();
+      return ok({ from: "task" as ItemKind, to: target, id: newId, title, removedId: id.id });
+    }
+
+    const activity = await db.prepare("SELECT id, kind, title, body, occurred_at AS occurredAt FROM activities WHERE user_id=? AND id=?").bind(owner.userId, id.id).first<{ id: string; kind: string; title: string; body: string | null; occurredAt: string | null }>();
+    if (!activity) return fail("not_found", "not found");
+    const title = String(activity.title ?? "").slice(0, TITLE_MAX);
+    const text = activity.body ? String(activity.body) : null;
+    const when = activity.occurredAt ? String(activity.occurredAt) : "";
+    const day = when ? when.slice(0, 10) : "";
+    const links = await db.prepare("SELECT contact_id AS contactId FROM activity_contacts WHERE user_id=? AND activity_id=?").bind(owner.userId, id.id).all<{ contactId: string }>();
+    const contactIds = (links.results ?? []).map((row) => String(row.contactId));
+
+    if (target === "task") {
+      statements.push(db.prepare("INSERT INTO tasks (id,user_id,contact_id,title,description,status,priority,due_date,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)").bind(newId, owner.userId, contactIds[0] ?? null, title, text, "todo", "normal", day || null, now, now));
+    } else {
+      const nextKind = target === "event" ? "event" : "note";
+      if (nextKind === "event" && !day) return invalid("a note without a date cannot become an event");
+      statements.push(db.prepare("INSERT INTO activities (id,user_id,kind,title,body,occurred_at,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?)").bind(newId, owner.userId, nextKind, title, text, when, now, now));
+      for (const contactId of contactIds) statements.push(db.prepare("INSERT INTO activity_contacts (activity_id,contact_id,user_id) VALUES (?,?,?)").bind(newId, contactId, owner.userId));
+    }
+    statements.push(db.prepare("DELETE FROM activities WHERE user_id=? AND id=?").bind(owner.userId, id.id));
+    const wrote = await executeAll(db, statements);
+    if ((wrote[0]?.meta.changes ?? 0) < 1) return internal();
+    return ok({ from: (activity.kind === "event" ? "event" : "note") as ItemKind, to: target, id: newId, title, removedId: id.id });
+  });
+}
