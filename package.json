@@ -26,20 +26,20 @@
     "better-auth": "1.7.14",
     "hash-wasm": "4.12.0",
     "lucide-react": "0.468.0",
-    "next": "16.4.3",
+    "next": "16.4.6",
     "react": "19.3.1",
     "react-dom": "19.3.1",
     "sql.js": "1.15.2"
   },
   "devDependencies": {
+    "@eslint/eslintrc": "3.3.7",
     "@types/node": "22.20.5",
     "@types/react": "19.3.0",
     "@types/react-dom": "19.3.0",
     "eslint": "9.39.5",
     "eslint-config-next": "16.4.3",
-    "typescript": "5.9.3",
-    "@eslint/eslintrc": "3.3.7",
     "fake-indexeddb": "6.2.7",
+    "typescript": "5.9.3",
     "wrangler": "4.156.0"
   }
 }
