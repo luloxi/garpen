@@ -6,8 +6,10 @@ import { fileURLToPath } from "node:url";
 import type { DatabaseSync } from "node:sqlite";
 import { resetEncryptionModeCache } from "../lib/mailtox-link.ts";
 import {
+  convertItem,
   createContact,
   createEvent,
+  createNote,
   createTask,
   deleteNote,
   deleteTask,
@@ -558,4 +560,65 @@ test("taskToUndatedNote converts an open task and can merge", async () => {
   assert.match(row.body, /Llamar/);
   assert.match(row.body, /Por el bot/);
   assert.deepEqual(errorOf(await taskToUndatedNote(d1, OWNER, { taskId: created.data.id })), { code: "not_found", message: "not found" });
+});
+
+test("createNote: undated and dated, with contact", async () => {
+  const { d1, db } = setup();
+  contact(db, "c1", "owner", "Ana");
+  const plain = await createNote(d1, OWNER, { title: "Idea", body: "probar" });
+  assert.equal(plain.ok, true);
+  if (!plain.ok) return;
+  assert.equal(plain.data.occurredAt, null);
+  const dated = await createNote(d1, OWNER, { title: "Reu", occurredAt: "2026-03-02", contactIds: ["c1"] });
+  assert.equal(dated.ok, true);
+  if (!dated.ok) return;
+  assert.equal(dated.data.occurredAt, "2026-03-02");
+  assert.deepEqual(dated.data.contactIds, ["c1"]);
+  assert.equal(count(db, "activities"), 2);
+  assert.equal(count(db, "activity_contacts"), 1);
+});
+
+test("convertItem: task -> note keeps title, text, date and contact", async () => {
+  const { d1, db } = setup();
+  contact(db, "c1", "owner", "Ana");
+  task(db, "t1", "owner", "Llamar", { description: "detalle", due: "2026-03-05", contactId: "c1" });
+  const res = await convertItem(d1, OWNER, { id: "t1", from: "task", to: "note" });
+  assert.equal(res.ok, true);
+  if (!res.ok) return;
+  assert.equal(res.data.title, "Llamar");
+  assert.equal(count(db, "tasks"), 0);
+  assert.equal(count(db, "activities"), 1);
+  const note = db.prepare("SELECT kind,title,body,occurred_at FROM activities WHERE id=?").get(res.data.id) as { kind: string; title: string; body: string | null; occurred_at: string };
+  assert.equal(note.kind, "note");
+  assert.equal(note.title, "Llamar");
+  assert.equal(note.body, "detalle");
+  assert.equal(note.occurred_at, "2026-03-05");
+  assert.equal(count(db, "activity_contacts"), 1);
+});
+
+test("convertItem: event -> task keeps date and title", async () => {
+  const { d1, db } = setup();
+  activity(db, "e1", "owner", "event", "Reunión", "2026-04-02 15:30", { body: null });
+  const res = await convertItem(d1, OWNER, { id: "e1", from: "event", to: "task" });
+  assert.equal(res.ok, true);
+  if (!res.ok) return;
+  assert.equal(count(db, "activities"), 0);
+  const row = db.prepare("SELECT title,status,priority,due_date FROM tasks WHERE id=?").get(res.data.id) as { title: string; status: string; priority: string; due_date: string };
+  assert.equal(row.title, "Reunión");
+  assert.equal(row.status, "todo");
+  assert.equal(row.priority, "normal");
+  assert.equal(row.due_date, "2026-04-02");
+});
+
+test("convertItem: rejects event without date and same-type", async () => {
+  const { d1, db } = setup();
+  const note = await createNote(d1, OWNER, { title: "Sin fecha" });
+  assert.equal(note.ok, true);
+  if (!note.ok) return;
+  const toEvent = await convertItem(d1, OWNER, { id: note.data.id, from: "note", to: "event" });
+  assert.equal(toEvent.ok, false);
+  const same = await convertItem(d1, OWNER, { id: note.data.id, from: "note", to: "note" });
+  assert.equal(same.ok, false);
+  const missing = await convertItem(d1, OWNER, { id: "nope", from: "task", to: "note" });
+  assert.equal(missing.ok, false);
 });

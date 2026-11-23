@@ -1037,9 +1037,11 @@ export async function convertItem(db: D1Like, ownerEmail: string | undefined, in
     const id = requiredId(body.id);
     if (!id.ok) return invalid(id.message);
     const from = parseEnum(body.from, ITEM_KINDS, "from");
-    if (!from.ok || !from.value) return invalid(from.message);
+    if (!from.ok) return invalid(from.message);
+    if (!from.value) return invalid("invalid from");
     const to = parseEnum(body.to, ITEM_KINDS, "to");
-    if (!to.ok || !to.value) return invalid(to.message);
+    if (!to.ok) return invalid(to.message);
+    if (!to.value) return invalid("invalid to");
     const target = to.value;
     if (from.value === target) return invalid("from and to are the same");
     const now = Date.now();
