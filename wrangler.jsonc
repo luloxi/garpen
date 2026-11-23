@@ -1,8 +1,8 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
-  // Internal names stay on purpose: the Worker name, the D1 database, bindings and vars
-  // keep their serpix / MAILTOX_* / CUENTIX_* identifiers so existing data and other Workers keep working.
-  "name": "serpix",
+  // The live Worker is "garpen" (it holds this app's secrets and custom domains).
+  // D1, bindings and vars keep their serpix / MAILTOX_* / CUENTIX_* identifiers on purpose.
+  "name": "garpen",
   "main": "worker.ts",
   "compatibility_date": "2026-10-30",
   "compatibility_flags": ["nodejs_compat"],
