@@ -9,7 +9,7 @@ import Agenda from "@/app/agenda";
 import { editorHtmlToStored, MAX_NOTE_BODY_CHARS, NOTE_TOO_BIG } from "@/lib/note-html";
 import { AVATAR_EXTERNAL_CONTINUE, AVATAR_EXTERNAL_WARNING, AvatarError, autoAvatar, autoEligible, avatarFetchStep, fetchAvatar, handleOf, shouldAutoAvatarOnSave, sourcesKey, toSmallWebp, waNumber, type AvatarSource } from "@/lib/avatar-client";
 import { contactRelations, RELATION_KEYS, RELATION_LABEL, type RelationKey, type RelationState, type Relations } from "@/lib/relations";
-import { ArrowRight, AlertCircle, CalendarOff, Clock, UserRound, ListChecks, CalendarClock, House, Users, Wallet, ShieldCheck, Sun, Moon, Plus, ContactRound, ListPlus, WalletCards, CalendarDays, NotebookPen, ReceiptText, TrendingDown, Timer, Inbox, MessageCircle, Search, Paperclip, ScanLine, Trash2 } from "lucide-react";
+import { ArrowRight, AlertCircle, CalendarOff, Clock, UserRound, ListChecks, CalendarClock, House, Users, Wallet, ShieldCheck, Sun, Moon, Plus, ContactRound, ListPlus, WalletCards, CalendarDays, NotebookPen, ReceiptText, TrendingDown, Timer, Inbox, MessageCircle, Search, Paperclip, ScanLine, Trash2, FileText } from "lucide-react";
 import AddSheet, { type AddSheetAction } from "@/app/add-sheet";
 import Inquiries, { type Inquiry } from "@/app/inquiries";
 import InvitesAdmin from "@/app/invites-admin";
@@ -215,7 +215,24 @@ export default function Workspace({name,email,image,isAdmin,e2e=false,e2eMenu,us
   const totals=useMemo(()=>({openTasks:tasks.filter(t=>t.status!=="done"&&t.status!=="cancelled").length,activeProjects:projects.filter(p=>p.status==="active").length}),[tasks,projects]);
   const todayKey=new Date().toLocaleDateString("sv-SE");
   const openTasks=useMemo(()=>tasks.filter(t=>t.status!=="done"&&t.status!=="cancelled").sort((a,b)=>(a.dueDate?0:1)-(b.dueDate?0:1)||String(a.dueDate||"").localeCompare(String(b.dueDate||""))),[tasks]);
-  const homeTasks=useMemo(()=>openTasks.slice(0,10),[openTasks]);
+  // Próximos: tareas abiertas + eventos + notas con fecha, mezclados y ordenados por fecha (10 máximo).
+  const homeUpcoming=useMemo(()=>{
+    type Row={key:string;kind:"task"|"event"|"note";item:Item;when:string};
+    const rows:Row[]=[];
+    for(const t of openTasks){
+      const d=String(t.dueDate||"").slice(0,10);
+      rows.push({key:"t:"+t.id,kind:"task",item:t,when:d||"9999-99-99"});
+    }
+    for(const a of activities){
+      const kind=a.kind==="event"?"event":"note";
+      const raw=String(a.occurredAt||"");
+      const d=raw.slice(0,10);
+      if(!d||d<todayKey)continue;
+      rows.push({key:(kind==="event"?"e:":"n:")+a.id,kind,item:a,when:raw.slice(0,16)});
+    }
+    rows.sort((x,y)=>x.when.localeCompare(y.when)||(x.kind==="task"?0:1)-(y.kind==="task"?0:1));
+    return rows.slice(0,10);
+  },[openTasks,activities,todayKey]);
   const timeByTask=useMemo(()=>{const m:Record<string,number>={};for(const e of timeEntries)if(e.taskId)m[e.taskId]=(m[e.taskId]||0)+Number(e.durationMs||0);return m;},[timeEntries]);
   const homeKpis:{id:string;icon:typeof Users;value:number;tip:string;go:Section}[]=[
     {id:"contacts",icon:Users,value:contacts.length,tip:"Contactos en tu CRM",go:"contacts"},
@@ -546,7 +563,8 @@ export default function Workspace({name,email,image,isAdmin,e2e=false,e2eMenu,us
         </div>
         {docs.homeAlert}
         <section className="panel home-panel"><div className="home-panel-head"><h3>Próximos</h3>{openTasks.length>0&&<button type="button" className="text-button pending-to-notes" title="Pasar todos los pendientes a notas sin fecha" onClick={()=>void convertAllPending()}>Pasar a notas sin fecha</button>}<button type="button" className="icon-link" title="Ver agenda" aria-label="Ver agenda" onClick={()=>go({section:"activity"})}><ArrowRight size={18} aria-hidden="true"/></button></div>
-          {homeTasks.length===0?<p className="empty-copy" title="Creá una con el botón +">Sin tareas abiertas</p>:homeTasks.map(t=>{const overdue=!!t.dueDate&&String(t.dueDate)<todayKey;return <div className="home-task" key={t.id}>
+          {homeUpcoming.length===0?<p className="empty-copy" title="Creá una con el botón +">Sin nada próximo</p>:homeUpcoming.map(r=>{
+            if(r.kind==="task"){const t=r.item;const overdue=!!t.dueDate&&String(t.dueDate)<todayKey;return <div className="home-task" key={r.key}>
             <button type="button" className={"home-check "+String(t.priority)} title={"Marcar como hecha · Prioridad "+labelStatus(t.priority).toLowerCase()} aria-label={"Marcar como hecha: "+String(t.title)} disabled={!!taskPending} onClick={()=>void toggleTask(t)}/>
             <button type="button" className="home-task-title" title={String(t.title)} onClick={()=>go({section:"activity"})}>{String(t.title)}</button>
             <span className="home-task-meta">
@@ -557,7 +575,17 @@ export default function Workspace({name,email,image,isAdmin,e2e=false,e2eMenu,us
             <span className="agenda-item-actions">
               <button type="button" className="agenda-item-btn" title="Quitar fecha / pasar a nota" aria-label="Quitar fecha / pasar a nota" onClick={()=>void convertTaskItem(t)}><CalendarOff size={15}/></button>
               <button type="button" className="agenda-item-btn is-danger" title="Eliminar" aria-label="Eliminar" onClick={()=>void remove("tasks",t)}><Trash2 size={15}/></button>
-            </span></div>;})}
+            </span></div>;}
+            const a=r.item;const isEvent=r.kind==="event";const day=String(a.occurredAt||"").slice(0,10);const time=String(a.occurredAt||"").slice(11,16);
+            return <div className="home-task" key={r.key}>
+              <span className="home-meta-icon" title={isEvent?"Evento":"Nota con fecha"} aria-label={isEvent?"Evento":"Nota con fecha"} tabIndex={0}>{isEvent?<CalendarClock size={15} aria-hidden="true"/>:<FileText size={15} aria-hidden="true"/>}</span>
+              <button type="button" className="home-task-title" title={String(a.title||"Sin título")} onClick={()=>go({section:"activity"})}>{String(a.title||"Sin título")}</button>
+              <span className="home-task-meta">
+                <span className="home-meta-date" title={(isEvent?"Evento · ":"Nota · ")+dateLabel(day)+(time?" "+time:"")} aria-label={(isEvent?"Evento · ":"Nota · ")+dateLabel(day)+(time?" "+time:"")} tabIndex={0}>{day.slice(8,10)+"/"+day.slice(5,7)}{time?" "+time:""}</span>
+              </span>
+              <span className="agenda-item-actions">
+                <button type="button" className="agenda-item-btn is-danger" title="Eliminar" aria-label="Eliminar" onClick={()=>void remove("activities",a)}><Trash2 size={15}/></button>
+              </span></div>;})}
         </section>
         <section className="panel home-panel"><div className="home-panel-head"><h3>Movimientos recientes</h3><button type="button" className="icon-link" title="Ver finanzas" aria-label="Ver finanzas" onClick={()=>go({section:"finance"})}><ArrowRight size={18} aria-hidden="true"/></button></div>
           {transactions.length===0?<p className="empty-copy" title="Registrá uno desde Finanzas">Sin movimientos</p>:transactions.slice(0,4).map(t=><div className="home-task" key={t.id}><span className={"money-sign "+String(t.kind)} title={t.kind==="income"?"Ingreso":"Gasto"} aria-label={t.kind==="income"?"Ingreso":"Gasto"}>{t.kind==="income"?"+":"−"}</span><span className="home-task-title static" title={String(t.accountName)+" · "+dateLabel(t.occurredAt)}>{String(t.category)}<CuentixMarks item={t}/></span><b className={t.kind==="income"?"positive":"negative"}>{money(Number(t.amountMinor),String(t.currency))}</b></div>)}
