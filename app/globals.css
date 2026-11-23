@@ -912,6 +912,7 @@ body:has(.activity-contact-picker) .editor-modal .form-grid textarea{min-height:
 .home-task-title.static{cursor:default}
 .home-task-meta{display:flex;align-items:center;gap:8px;flex:none;color:var(--muted);font-size:12px;font-weight:600}
 .home-meta-icon,.home-meta-date{display:inline-flex;align-items:center;gap:3px;cursor:help}
+.home-meta-name{display:inline-flex;align-items:center;max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px;color:var(--muted);cursor:help}
 .home-meta-date.overdue{color:#e16a60}
 .home-panel .empty-copy{margin:8px 0 12px}
 .home-kpi[data-tip],.home-meta-icon,.home-meta-date{position:relative}

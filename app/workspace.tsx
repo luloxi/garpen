@@ -217,22 +217,26 @@ export default function Workspace({name,email,image,isAdmin,e2e=false,e2eMenu,us
   const openTasks=useMemo(()=>tasks.filter(t=>t.status!=="done"&&t.status!=="cancelled").sort((a,b)=>(a.dueDate?0:1)-(b.dueDate?0:1)||String(a.dueDate||"").localeCompare(String(b.dueDate||""))),[tasks]);
   // Próximos: tareas abiertas + eventos + notas con fecha, mezclados y ordenados por fecha (10 máximo).
   const homeUpcoming=useMemo(()=>{
-    type Row={key:string;kind:"task"|"event"|"note";item:Item;when:string};
+    type Row={key:string;kind:"task"|"event"|"note";item:Item;when:string;who:string};
+    const byId=new Map(contacts.map(c=>[String(c.id),String(c.name||"")]));
     const rows:Row[]=[];
     for(const t of openTasks){
       const d=String(t.dueDate||"").slice(0,10);
-      rows.push({key:"t:"+t.id,kind:"task",item:t,when:d||"9999-99-99"});
+      const cid=String(t.contactId||"");
+      rows.push({key:"t:"+t.id,kind:"task",item:t,when:d||"9999-99-99",who:String(t.contactName||byId.get(cid)||"")});
     }
     for(const a of activities){
       const kind=a.kind==="event"?"event":"note";
       const raw=String(a.occurredAt||"");
       const d=raw.slice(0,10);
       if(!d||d<todayKey)continue;
-      rows.push({key:(kind==="event"?"e:":"n:")+a.id,kind,item:a,when:raw.slice(0,16)});
+      const ids=String(a.contactIds||"").split(",").filter(Boolean);
+      const who=ids.map(id=>byId.get(id)).filter(Boolean).join(", ");
+      rows.push({key:(kind==="event"?"e:":"n:")+a.id,kind,item:a,when:raw.slice(0,16),who});
     }
     rows.sort((x,y)=>x.when.localeCompare(y.when)||(x.kind==="task"?0:1)-(y.kind==="task"?0:1));
     return rows.slice(0,10);
-  },[openTasks,activities,todayKey]);
+  },[openTasks,activities,contacts,todayKey]);
   const timeByTask=useMemo(()=>{const m:Record<string,number>={};for(const e of timeEntries)if(e.taskId)m[e.taskId]=(m[e.taskId]||0)+Number(e.durationMs||0);return m;},[timeEntries]);
   const homeKpis:{id:string;icon:typeof Users;value:number;tip:string;go:Section}[]=[
     {id:"contacts",icon:Users,value:contacts.length,tip:"Contactos en tu CRM",go:"contacts"},
@@ -568,7 +572,7 @@ export default function Workspace({name,email,image,isAdmin,e2e=false,e2eMenu,us
             <button type="button" className={"home-check "+String(t.priority)} title={"Marcar como hecha · Prioridad "+labelStatus(t.priority).toLowerCase()} aria-label={"Marcar como hecha: "+String(t.title)} disabled={!!taskPending} onClick={()=>void toggleTask(t)}/>
             <button type="button" className="home-task-title" title={String(t.title)} onClick={()=>go({section:"activity"})}>{String(t.title)}</button>
             <span className="home-task-meta">
-              {t.contactName&&<span className="home-meta-icon" title={"Contacto: "+String(t.contactName)} aria-label={"Contacto: "+String(t.contactName)} tabIndex={0}><UserRound size={14} aria-hidden="true"/></span>}
+              {r.who?<span className="home-meta-name" title={"Contacto: "+r.who} aria-label={"Contacto: "+r.who} tabIndex={0}>{r.who}</span>:null}
               {t.status==="in_progress"&&<span className="home-meta-icon" title="En curso" aria-label="En curso" tabIndex={0}><Clock size={14} aria-hidden="true"/></span>}
               <span className={"home-meta-date"+(overdue?" overdue":"")} title={t.dueDate?(overdue?"Vencida · ":"Vence ")+dateLabel(t.dueDate):"Sin fecha"} aria-label={t.dueDate?(overdue?"Vencida · ":"Vence ")+dateLabel(t.dueDate):"Sin fecha"} tabIndex={0}>{t.dueDate?<>{overdue&&<AlertCircle size={13} aria-hidden="true"/>}{String(t.dueDate).slice(8,10)+"/"+String(t.dueDate).slice(5,7)}</>:<CalendarOff size={14} aria-hidden="true"/>}</span>
             </span>
@@ -581,6 +585,7 @@ export default function Workspace({name,email,image,isAdmin,e2e=false,e2eMenu,us
               <span className="home-meta-icon" title={isEvent?"Evento":"Nota con fecha"} aria-label={isEvent?"Evento":"Nota con fecha"} tabIndex={0}>{isEvent?<CalendarClock size={15} aria-hidden="true"/>:<FileText size={15} aria-hidden="true"/>}</span>
               <button type="button" className="home-task-title" title={String(a.title||"Sin título")} onClick={()=>go({section:"activity"})}>{String(a.title||"Sin título")}</button>
               <span className="home-task-meta">
+                {r.who?<span className="home-meta-name" title={"Contacto: "+r.who} aria-label={"Contacto: "+r.who} tabIndex={0}>{r.who}</span>:null}
                 <span className="home-meta-date" title={(isEvent?"Evento · ":"Nota · ")+dateLabel(day)+(time?" "+time:"")} aria-label={(isEvent?"Evento · ":"Nota · ")+dateLabel(day)+(time?" "+time:"")} tabIndex={0}>{day.slice(8,10)+"/"+day.slice(5,7)}{time?" "+time:""}</span>
               </span>
               <span className="agenda-item-actions">
