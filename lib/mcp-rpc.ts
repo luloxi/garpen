@@ -4,6 +4,7 @@ import { UNDATED_OCCURRED_AT } from "./pending-notes.ts";
 import { resolveApprovedUser } from "./mailtox-link.ts";
 import { isDateKey } from "./recurring.ts";
 import { clearNoteDate, convertTaskToNote, isUndatedOccurredAt } from "./pending-notes.ts";
+import { PAYMENT_SELECT, mapPayment, parsePaymentCreate, parsePaymentPatch, type Payment } from "./payments.ts";
 
 export type RpcErrorCode = "no_owner" | "encrypted_account" | "invalid" | "not_found" | "not_enabled" | "internal";
 export type RpcResult<T> = { ok: true; data: T } | { ok: false; error: { code: RpcErrorCode; message: string } };
@@ -48,6 +49,7 @@ export type Note = {
   contactIds: string[];
   updatedAt: number;
 };
+export type { Payment };
 export type Inquiry = {
   id: string;
   name: string;
@@ -1161,5 +1163,97 @@ export async function convertItem(db: D1Like, ownerEmail: string | undefined, in
     const wrote = await executeAll(db, statements);
     if ((wrote[0]?.meta.changes ?? 0) < 1) return internal();
     return ok({ from: (activity.kind === "event" ? "event" : "note") as ItemKind, to: target, id: newId, title, removedId: id.id });
+  });
+}
+
+export async function addContactNote(db: D1Like, ownerEmail: string | undefined, input: unknown = {}): Promise<RpcResult<Note>> {
+  const body = record(input);
+  if (!body) return invalid("invalid input");
+  const contact = requiredId(body.contactId);
+  if (!contact.ok) return invalid("invalid contact");
+  const rest: Record<string, unknown> = { ...body, contactIds: [contact.id] };
+  delete rest.contactId;
+  return createNote(db, ownerEmail, rest);
+}
+
+export async function createPayment(db: D1Like, ownerEmail: string | undefined, input: unknown = {}): Promise<RpcResult<Payment>> {
+  return run(async () => {
+    const owner = await ownerId(db, ownerEmail);
+    if (!owner.ok) return owner.result;
+    const body = record(input);
+    if (!body) return invalid("invalid input");
+    const parsed = parsePaymentCreate(body);
+    if (!parsed.ok) return invalid(parsed.message);
+    if (!(await contactOwned(db, owner.userId, parsed.value.contactId))) return invalid("invalid contact");
+    const id = crypto.randomUUID();
+    const now = Date.now();
+    const v = parsed.value;
+    const result = await db.prepare(
+      "INSERT INTO contact_payments (id,user_id,contact_id,amount_minor,currency,occurred_at,concept,status,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)",
+    ).bind(id, owner.userId, v.contactId, v.amountMinor, v.currency, v.occurredAt, v.concept, v.status, now, now).run();
+    if ((result.meta.changes ?? 0) < 1) return internal();
+    const row = await db.prepare(PAYMENT_SELECT + " WHERE p.user_id=? AND p.id=?").bind(owner.userId, id).first<Parameters<typeof mapPayment>[0]>();
+    if (!row) return internal();
+    return ok(mapPayment(row));
+  });
+}
+
+export async function listPayments(db: D1Like, ownerEmail: string | undefined, input: unknown = {}): Promise<RpcResult<Page<Payment>>> {
+  return run(async () => {
+    const owner = await ownerId(db, ownerEmail);
+    if (!owner.ok) return owner.result;
+    const body = record(input);
+    if (!body) return invalid("invalid input");
+    const page = parsePage(body);
+    if (!page.ok) return invalid(page.message);
+    const where = ["p.user_id=?"];
+    const binds: unknown[] = [owner.userId];
+    if (body.contactId !== undefined && body.contactId !== null && body.contactId !== "") {
+      const contact = requiredId(body.contactId);
+      if (!contact.ok) return invalid("invalid contact");
+      if (!(await contactOwned(db, owner.userId, contact.id))) return invalid("invalid contact");
+      where.push("p.contact_id=?");
+      binds.push(contact.id);
+    }
+    if (body.status !== undefined && body.status !== null && body.status !== "") {
+      if (body.status !== "pending" && body.status !== "paid") return invalid("invalid status");
+      where.push("p.status=?");
+      binds.push(body.status);
+    }
+    const sql = PAYMENT_SELECT + " WHERE " + where.join(" AND ") + " ORDER BY p.occurred_at DESC, p.created_at DESC LIMIT ? OFFSET ?";
+    const { rows, nextOffset } = await queryPage<Parameters<typeof mapPayment>[0]>(db, sql, binds, page);
+    return ok({ items: rows.map(mapPayment), nextOffset });
+  });
+}
+
+export async function updatePayment(db: D1Like, ownerEmail: string | undefined, input: unknown = {}): Promise<RpcResult<Payment>> {
+  return run(async () => {
+    const owner = await ownerId(db, ownerEmail);
+    if (!owner.ok) return owner.result;
+    const body = record(input);
+    if (!body) return invalid("invalid input");
+    const id = requiredId(body.id);
+    if (!id.ok) return invalid(id.message);
+    const parsed = parsePaymentPatch(body);
+    if (!parsed.ok) return invalid(parsed.message);
+    const existing = await db.prepare(
+      "SELECT id, contact_id AS contactId, amount_minor AS amountMinor, currency, occurred_at AS occurredAt, concept, status FROM contact_payments WHERE id=? AND user_id=?",
+    ).bind(id.id, owner.userId).first<{ id: string; contactId: string; amountMinor: number; currency: string; occurredAt: string; concept: string; status: string }>();
+    if (!existing) return fail("not_found", "not found");
+    const next = {
+      amountMinor: parsed.value.amountMinor ?? Number(existing.amountMinor),
+      currency: parsed.value.currency ?? existing.currency,
+      occurredAt: parsed.value.occurredAt ?? existing.occurredAt,
+      concept: parsed.value.concept ?? existing.concept,
+      status: parsed.value.status ?? existing.status,
+    };
+    const now = Date.now();
+    const result = await db.prepare(
+      "UPDATE contact_payments SET amount_minor=?,currency=?,occurred_at=?,concept=?,status=?,updated_at=? WHERE id=? AND user_id=?",
+    ).bind(next.amountMinor, next.currency, next.occurredAt, next.concept, next.status, now, id.id, owner.userId).run();
+    if ((result.meta.changes ?? 0) < 1) return fail("not_found", "not found");
+    const row = await db.prepare(PAYMENT_SELECT + " WHERE p.user_id=? AND p.id=?").bind(owner.userId, id.id).first<Parameters<typeof mapPayment>[0]>();
+    if (!row) return internal();
+    return ok(mapPayment(row));
   });
 }

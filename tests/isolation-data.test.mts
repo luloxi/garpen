@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { asUser, call, locked, setEnv } from "./route-harness.mts";
 import { A, B, assert4xx, assertNoA, assertSame, ids, seedWorld, snap, txBody } from "./isolation-shared.mts";
 
-const RESOURCES = ["contacts", "projects", "tasks", "accounts", "transactions", "activities"] as const;
+const RESOURCES = ["contacts", "projects", "tasks", "accounts", "transactions", "activities", "payments"] as const;
 const base = "http://t.local";
 
 async function api() {
@@ -24,9 +24,10 @@ const patchBody: Record<string, unknown> = {
   accounts: { name: "Hackeado" },
   activities: { title: "Hackeado", kind: "note", contactIds: [] },
   transactions: txBody(ids.accountB),
+  payments: { status: "paid" },
 };
 const ownId: Record<string, string> = {
-  contacts: ids.contactA, projects: ids.projectA, tasks: ids.taskA, accounts: ids.accountA, activities: ids.activityA, transactions: ids.txA,
+  contacts: ids.contactA, projects: ids.projectA, tasks: ids.taskA, accounts: ids.accountA, activities: ids.activityA, transactions: ids.txA, payments: ids.paymentA,
 };
 
 test("B's lists and totals never include A's rows", async () => {
@@ -53,6 +54,11 @@ test("B's lists and totals never include A's rows", async () => {
     const txItems = (txs.body as { items: { id: string; receiptId: string }[] }).items;
     assert.deepEqual(txItems.map((row) => row.id), [ids.txB]);
     assert.equal(txItems[0].receiptId, ids.receiptB);
+    const pays = await call(routes.list, "GET", base + "/api/data/payments", { params: { resource: "payments" } });
+    assert.equal(pays.status, 200);
+    const payItems = (pays.body as { items: { id: string; concept: string }[] }).items;
+    assert.deepEqual(payItems.map((row) => row.id), [ids.paymentB]);
+    assert.equal(payItems[0].concept, "pago b");
     const totals = await call(routes.finance, "GET", base + "/api/finance/totals");
     assert.equal(totals.status, 200);
     const body = totals.body as { ARS: { expenseMinor: number }; transactionCount: number };

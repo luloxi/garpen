@@ -425,7 +425,7 @@ test("McpRpc is a named WorkerEntrypoint and the logic module stays pure", () =>
   const start = worker.indexOf("export class McpRpc");
   const end = worker.indexOf("const worker = {");
   const body = worker.slice(start, end);
-  for (const name of ["listContacts", "searchContacts", "createContact", "listTasks", "searchTasks", "createTask", "updateTask", "deleteTask", "taskToUndatedNote", "listNotes", "searchNotes", "updateNote", "deleteNote", "listEvents", "searchEvents", "createEvent", "listInquiries", "searchInquiries"]) {
+  for (const name of ["listContacts", "searchContacts", "createContact", "listTasks", "searchTasks", "createTask", "updateTask", "deleteTask", "taskToUndatedNote", "listNotes", "searchNotes", "updateNote", "deleteNote", "createNote", "addContactNote", "listEvents", "searchEvents", "createEvent", "listInquiries", "searchInquiries", "createPayment", "listPayments", "updatePayment"]) {
     assert.match(body, new RegExp("\\b" + name + "\\("));
   }
   assert.equal(body.includes("SELECT"), false);

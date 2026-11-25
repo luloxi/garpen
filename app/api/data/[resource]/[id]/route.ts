@@ -8,9 +8,10 @@ import { createRuleForTransaction, generateDue, isDateKey, parseRecurrence, toda
 import { prepareActivityBody } from "@/lib/note-html";
 import { activityOccurredAt } from "@/lib/pending-notes";
 import { attachReceipt, receiptLinkable } from "@/lib/receipts-db";
+import { parsePaymentPatch, paymentErrorEs } from "@/lib/payments";
 
 export const dynamic = "force-dynamic";
-const tableByResource = { contacts: "contacts", projects: "projects", tasks: "tasks", accounts: "financial_accounts", transactions: "financial_transactions", activities: "activities" } as const;
+const tableByResource = { contacts: "contacts", projects: "projects", tasks: "tasks", accounts: "financial_accounts", transactions: "financial_transactions", activities: "activities", payments: "contact_payments" } as const;
 type Resource = keyof typeof tableByResource;
 function str(v: unknown, max=5000): string { return typeof v === "string" ? v.trim().slice(0,max) : ""; }
 function nullable(v: unknown, max=5000): string | null { return str(v,max) || null; }
@@ -106,6 +107,14 @@ export async function PATCH(request: Request, { params }: { params: Promise<{res
           }
           await reconcileManual(db,userId,id,now);
         }
+        break;
+      }
+      case "payments": {
+        const parsed=parsePaymentPatch(b);
+        if(!parsed.ok) return NextResponse.json({error:paymentErrorEs(parsed.message)},{status:400});
+        const existing=await db.prepare("SELECT amount_minor AS amountMinor, currency, occurred_at AS occurredAt, concept, status FROM contact_payments WHERE id=? AND user_id=?").bind(id,userId).first<{amountMinor:number;currency:string;occurredAt:string;concept:string;status:string}>();
+        if(!existing) return NextResponse.json({error:"Registro no encontrado"},{status:404});
+        result=await db.prepare("UPDATE contact_payments SET amount_minor=?,currency=?,occurred_at=?,concept=?,status=?,updated_at=? WHERE id=? AND user_id=?").bind(parsed.value.amountMinor??existing.amountMinor,parsed.value.currency??existing.currency,parsed.value.occurredAt??existing.occurredAt,parsed.value.concept??existing.concept,parsed.value.status??existing.status,now,id,userId).run();
         break;
       }
     }
