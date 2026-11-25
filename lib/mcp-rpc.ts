@@ -577,7 +577,10 @@ export async function listUpcoming(
     if (!from) return invalid("invalid date range");
     const page = parsePage(body.limit === undefined ? { ...body, limit: 10 } : body);
     if (!page.ok) return invalid(page.message);
+    // The UNION is wrapped so ORDER BY can use expressions: on a compound SELECT SQLite
+    // only accepts plain output columns there.
     const sql =
+      "SELECT * FROM (" +
       "SELECT 'task' AS kind, t.id AS id, t.title AS title, COALESCE(t.due_date,'') AS whenx, " +
       "t.priority AS priority, COALESCE(t.contact_id,'') AS contact_ids " +
       "FROM tasks t WHERE t.user_id = ? AND t.status IN ('todo','in_progress') " +
@@ -585,11 +588,11 @@ export async function listUpcoming(
       "SELECT a.kind AS kind, a.id AS id, a.title AS title, COALESCE(a.occurred_at,'') AS whenx, " +
       "NULL AS priority, " +
       "COALESCE((SELECT group_concat(ac.contact_id, ',') FROM activity_contacts ac WHERE ac.activity_id = a.id), '') AS contact_ids " +
-      "FROM activities a WHERE a.user_id = ? AND a.occurred_at >= ? " +
-      "ORDER BY (whenx = '') ASC, whenx ASC, kind = 'task' DESC, title ASC LIMIT ? OFFSET ?";
+      "FROM activities a WHERE a.user_id = ? AND a.occurred_at >= ?" +
+      ") ORDER BY (whenx = '') ASC, whenx ASC, kind = 'task' DESC, title ASC LIMIT ? OFFSET ?";
     const listed = await db
       .prepare(sql)
-      .bind(owner.userId, owner.userId, from, page.limit + 1, page.offset)
+      .bind(owner.userId, owner.userId, from.raw, page.limit + 1, page.offset)
       .all<UpcomingRow>();
     const rows = listed.results ?? [];
     const hasMore = rows.length > page.limit;
