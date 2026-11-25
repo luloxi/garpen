@@ -578,8 +578,8 @@ export default function Workspace({name,email,image,isAdmin,e2e=false,e2eMenu,us
           {homeKpis.map(k=>{const Icon=k.icon;return <button type="button" key={k.id} className="home-kpi" data-tip={k.tip} title={k.tip} aria-label={k.tip} onClick={()=>go({section:k.go})}><Icon size={18} strokeWidth={2.1} aria-hidden="true"/><strong>{k.value}</strong></button>;})}
         </div>
         {docs.homeAlert}
-        <section className="panel home-panel"><div className="home-panel-head"><h3>Próximos</h3>{openTasks.length>0&&<button type="button" className="text-button pending-to-notes" title="Pasar todos los pendientes a notas sin fecha" onClick={()=>void convertAllPending()}>Pasar a notas sin fecha</button>}<button type="button" className="icon-link" title="Ver agenda" aria-label="Ver agenda" onClick={()=>go({section:"activity"})}><ArrowRight size={18} aria-hidden="true"/></button></div>
-          {homeUpcoming.length===0?<p className="empty-copy" title="Creá una con el botón +">Sin nada próximo</p>:homeUpcoming.map(r=>{
+        <section className="panel home-panel home-upcoming"><div className="home-panel-head"><h3>Próximos</h3>{openTasks.length>0&&<button type="button" className="text-button pending-to-notes" title="Pasar todos los pendientes a notas sin fecha" onClick={()=>void convertAllPending()}>Pasar a notas sin fecha</button>}<button type="button" className="icon-link" title="Ver agenda" aria-label="Ver agenda" onClick={()=>go({section:"activity"})}><ArrowRight size={18} aria-hidden="true"/></button></div>
+          {homeUpcoming.length===0?<p className="empty-copy" title="Creá una con el botón +">Sin nada próximo</p>:<div className="home-upcoming-list">{homeUpcoming.map(r=>{
             if(r.kind==="task"){const t=r.item;const overdue=!!t.dueDate&&String(t.dueDate)<todayKey;return <div className="home-task" key={r.key}>
             <button type="button" className={"home-check "+String(t.priority)} title={"Marcar como hecha · Prioridad "+labelStatus(t.priority).toLowerCase()} aria-label={"Marcar como hecha: "+String(t.title)} disabled={!!taskPending} onClick={()=>void toggleTask(t)}/>
             <button type="button" className="home-task-title" title={String(t.title)} onClick={()=>go({section:"activity"})}>{String(t.title)}</button>
@@ -602,7 +602,7 @@ export default function Workspace({name,email,image,isAdmin,e2e=false,e2eMenu,us
               </span>
               <span className="agenda-item-actions">
                 <button type="button" className="agenda-item-btn is-danger" title="Eliminar" aria-label="Eliminar" onClick={()=>void remove("activities",a)}><Trash2 size={15}/></button>
-              </span></div>;})}
+              </span></div>;})}</div>}
         </section>
         <section className="panel home-panel"><div className="home-panel-head"><h3>Movimientos recientes</h3><button type="button" className="icon-link" title="Ver finanzas" aria-label="Ver finanzas" onClick={()=>go({section:"finance"})}><ArrowRight size={18} aria-hidden="true"/></button></div>
           {transactions.length===0?<p className="empty-copy" title="Registrá uno desde Finanzas">Sin movimientos</p>:transactions.slice(0,4).map(t=><div className="home-task" key={t.id}><span className={"money-sign "+String(t.kind)} title={t.kind==="income"?"Ingreso":"Gasto"} aria-label={t.kind==="income"?"Ingreso":"Gasto"}>{t.kind==="income"?"+":"−"}</span><span className="home-task-title static" title={String(t.accountName)+" · "+dateLabel(t.occurredAt)}>{String(t.category)}<CuentixMarks item={t}/></span><b className={t.kind==="income"?"positive":"negative"}>{money(Number(t.amountMinor),String(t.currency))}</b></div>)}
