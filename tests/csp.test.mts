@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { CSP_CONNECT_HOSTS, CSP_IMG_HOSTS, FRAME_ANCESTORS, SECURITY_HEADERS, buildCsp, newNonce } from "../lib/csp.ts";
+import { CSP_CONNECT_HOSTS, CSP_GOOGLE_API_HOSTS, CSP_GOOGLE_FRAME_HOSTS, CSP_IMG_HOSTS, FRAME_ANCESTORS, SECURITY_HEADERS, buildCsp, newNonce } from "../lib/csp.ts";
 
 const NONCE = "N0nce+Val/id=";
 const REQUIRED = [
@@ -9,6 +9,7 @@ const REQUIRED = [
   "style-src",
   "img-src",
   "connect-src",
+  "frame-src",
   "font-src",
   "worker-src",
   "manifest-src",
@@ -60,7 +61,8 @@ test("production policy has every directive, the nonce, and no eval or wildcard"
   assert.equal((directives.get("style-src") ?? []).some((token) => token.startsWith("'nonce-")), false);
   assert.deepEqual(directives.get("img-src")?.slice(0, 3), ["'self'", "data:", "blob:"]);
   assert.deepEqual(hosts(directives.get("img-src") ?? []), [...CSP_IMG_HOSTS]);
-  assert.deepEqual(hosts(directives.get("connect-src") ?? []), [...CSP_CONNECT_HOSTS]);
+  assert.deepEqual(hosts(directives.get("connect-src") ?? []), [...CSP_CONNECT_HOSTS, ...CSP_GOOGLE_API_HOSTS]);
+  assert.deepEqual(directives.get("frame-src"), ["https://accounts.google.com"]);
   assert.deepEqual(directives.get("font-src"), ["'self'"]);
   assert.deepEqual(directives.get("worker-src"), ["'self'"]);
   assert.deepEqual(directives.get("manifest-src"), ["'self'"]);
@@ -83,7 +85,8 @@ test("the allow-list is exactly the hosts the client uses", () => {
   const csp = buildCsp({ nonce: NONCE, isDev: false });
   const found = [...csp.matchAll(/https:\/\/[^\s;]+/g)].map((match) => match[0]);
   assert.deepEqual([...FRAME_ANCESTORS], ["https://genki.lulox.com.ar"]);
-  assert.deepEqual(found, [...CSP_IMG_HOSTS, ...CSP_CONNECT_HOSTS, ...FRAME_ANCESTORS]);
+  assert.deepEqual([...CSP_GOOGLE_API_HOSTS], ["https://www.googleapis.com", "https://sheets.googleapis.com"]);
+  assert.deepEqual(found, [...CSP_IMG_HOSTS, ...CSP_CONNECT_HOSTS, ...CSP_GOOGLE_API_HOSTS, ...CSP_GOOGLE_FRAME_HOSTS, ...FRAME_ANCESTORS]);
 });
 
 test("dev adds unsafe-eval and ws: and production does not", () => {

@@ -18,6 +18,8 @@ const COVERED = [
   "admin/users/[userId]/route.ts",
   "avatar/[id]/route.ts",
   "data/[resource]/route.ts",
+  "export/sheets/route.ts",
+  "export/sheets-config/route.ts",
   "data/[resource]/[id]/route.ts",
   "documents/route.ts",
   "documents/[id]/route.ts",

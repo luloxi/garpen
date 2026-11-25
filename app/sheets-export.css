@@ -1,0 +1,22 @@
+/* "Guardar en Google Sheets": small dialog, bottom sheet on the phone. */
+.sheets-backdrop{z-index:120}
+.sheets-modal{background:var(--surface);color:var(--ink);border:1px solid var(--line);border-radius:18px;padding:20px;width:min(100%,380px);box-shadow:0 25px 80px rgba(20,28,60,.22)}
+.sheets-head{display:flex;align-items:center;gap:12px}
+.sheets-head h2{flex:1;margin:0;font-size:18px;line-height:1.25}
+.sheets-head .icon-button{flex:none;display:grid;place-items:center;width:44px;height:44px}
+.sheets-icon{flex:none;width:40px;height:40px;border-radius:12px;display:grid;place-items:center;background:color-mix(in srgb,var(--accent) 16%,var(--surface));color:var(--accent)}
+.sheets-text{margin:14px 0 16px;font-size:15px;line-height:1.5;color:var(--muted)}
+.sheets-text strong{color:var(--ink)}
+.sheets-status{display:flex;align-items:center;gap:8px;margin-bottom:4px}
+.sheets-warning{margin:-4px 0 16px;padding:10px 12px;border-radius:12px;font-size:14px;line-height:1.45;background:color-mix(in srgb,#f5a524 16%,var(--surface));color:var(--ink);border:1px solid color-mix(in srgb,#f5a524 40%,var(--line))}
+.sheets-actions{display:grid;gap:8px}
+.sheets-wide{width:100%;min-height:46px;display:inline-flex;align-items:center;justify-content:center;gap:8px;font-size:15px;cursor:pointer}
+.sheets-wide:disabled{cursor:wait}
+.sheets-link{text-decoration:none}
+.sheets-spin{animation:sheets-spin 1s linear infinite}
+@keyframes sheets-spin{to{transform:rotate(360deg)}}
+@media (prefers-reduced-motion:reduce){.sheets-spin{animation:none}}
+@media (max-width:640px){
+  .sheets-backdrop{place-items:end center;padding:0}
+  .sheets-modal{width:100%;border-radius:22px 22px 0 0;padding:20px 18px max(20px,env(safe-area-inset-bottom))}
+}
