@@ -10,6 +10,7 @@ import {
   deleteTask,
   listContacts,
   listEvents,
+  listUpcoming,
   listInquiries,
   listNotes,
   listTasks,
@@ -119,6 +120,7 @@ function toolsFor(db: D1Like, email: string): McpToolDef[] {
       occurredAt: { type: "string" },
       contactIds: { type: "array", items: { type: "string" } },
     }, ["title"]), annotations: { readOnlyHint: false, destructiveHint: false, title: "Create note" }, run: run(createNote) },
+    { name: "garpen_list_upcoming", description: "List what is next: open tasks plus events and notes from a date (same list as the Garpen home).", inputSchema: jsonSchemaObject({ from: { type: "string" }, ...pageProps }), annotations: { readOnlyHint: true, title: "List upcoming" }, run: run(listUpcoming) },
     { name: "garpen_list_events", description: "List your agenda events in a from/to range.", inputSchema: jsonSchemaObject({ from: { type: "string" }, to: { type: "string" }, ...pageProps }, ["from", "to"]), annotations: { readOnlyHint: true, title: "List events" }, run: run(listEvents) },
     { name: "garpen_search_events", description: "Search your agenda events.", inputSchema: jsonSchemaObject({ ...queryProps, from: { type: "string" }, to: { type: "string" }, ...pageProps }, ["query"]), annotations: { readOnlyHint: true, title: "Search events" }, run: run(searchEvents) },
     { name: "garpen_create_event", description: "Create an agenda event in your Garpen account.", inputSchema: jsonSchemaObject({
