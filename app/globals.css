@@ -920,7 +920,12 @@ body:has(.activity-contact-picker) .editor-modal .form-grid textarea{min-height:
   .home-kpi[data-tip]:hover::after{content:attr(data-tip);position:absolute;top:calc(100% + 6px);left:50%;transform:translateX(-50%);z-index:20;padding:6px 10px;border-radius:8px;background:var(--ink);color:var(--surface);font-size:12px;font-weight:600;white-space:nowrap;pointer-events:none}
 }
 @media (min-width:900px){.home-head h2{font-size:26px}.home-kpis{max-width:640px}}
-@media (max-width:700px){.main-area:has(.home-head){padding-top:12px}}
+@media (max-width:700px){
+  .main-area:has(.home-head){display:flex;flex-direction:column;padding-top:12px;min-height:calc(100svh - 76px - env(safe-area-inset-bottom))}
+  /* Same 10 mixed items as desktop: the list fills the leftover height and scrolls inside. */
+  .home-upcoming{flex:1 1 auto;min-height:min(420px,calc(100svh - 320px));display:flex;flex-direction:column;overflow:hidden}
+  .home-upcoming-list{flex:1 1 auto;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch}
+}
 
 /* Form labels: readable, on-palette (pink in light, soft pink in dark) */
 :root .editor-modal .form-grid label,:root .editor-modal .field-label,:root .editor-modal .activity-contact-picker>strong{color:#a02c68!important;font-size:13px!important;font-weight:700!important;letter-spacing:.1px}
