@@ -13,6 +13,7 @@ export const swrPaths = {
   tasks: "/api/data/tasks",
   accounts: "/api/data/accounts",
   activities: "/api/data/activities",
+  payments: "/api/data/payments",
   totals: "/api/finance/totals",
   inquiries: "/api/inquiries",
   recurring: "/api/recurring",

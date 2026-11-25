@@ -16,7 +16,7 @@ import { generateDue, todayInBuenosAires } from "./lib/recurring.ts";
 import { purgeOrphanReceipts } from "./lib/receipts-db.ts";
 import { WorkerEntrypoint } from "cloudflare:workers";
 import { listContactsWithEmail, upsertContactByEmail } from "./lib/mailtox-link.ts";
-import { createContact, createEvent, createTask, deleteNote, deleteTask, listContacts, listEvents, listInquiries, listNotes, listTasks, listUpcoming, searchContacts, searchEvents, searchInquiries, searchNotes, searchTasks, taskToUndatedNote, updateNote, updateTask } from "./lib/mcp-rpc.ts";
+import { addContactNote, createContact, createEvent, createNote, createPayment, createTask, deleteNote, deleteTask, listContacts, listEvents, listInquiries, listNotes, listPayments, listTasks, listUpcoming, searchContacts, searchEvents, searchInquiries, searchNotes, searchTasks, taskToUndatedNote, updateNote, updatePayment, updateTask } from "./lib/mcp-rpc.ts";
 import { runLumaSyncForOwner } from "./lib/luma-settings.ts";
 import { legacyHostRedirect } from "./lib/legacy-host.ts";
 import { handleGarpenMcp } from "./lib/mcp-route.ts";
@@ -136,6 +136,27 @@ export class McpRpc extends WorkerEntrypoint<Env> {
   searchInquiries(input: unknown) {
     return searchInquiries(this.env.DB, this.env.MCP_OWNER_EMAIL, input);
   }
+
+  createNote(input: unknown) {
+    return createNote(this.env.DB, this.env.MCP_OWNER_EMAIL, input);
+  }
+
+  addContactNote(input: unknown) {
+    return addContactNote(this.env.DB, this.env.MCP_OWNER_EMAIL, input);
+  }
+
+  createPayment(input: unknown) {
+    return createPayment(this.env.DB, this.env.MCP_OWNER_EMAIL, input);
+  }
+
+  listPayments(input: unknown) {
+    return listPayments(this.env.DB, this.env.MCP_OWNER_EMAIL, input);
+  }
+
+  updatePayment(input: unknown) {
+    return updatePayment(this.env.DB, this.env.MCP_OWNER_EMAIL, input);
+  }
+
 }
 
 const worker = {

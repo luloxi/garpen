@@ -26,6 +26,7 @@ export const LOCAL_DATA_TABLES = [
   "document_time_entries",
   "receipts",
   "recurring_rules",
+  "contact_payments",
 ];
 
 function applyMigrations(db) {

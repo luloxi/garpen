@@ -4,7 +4,7 @@
 export type Section = "home" | "contacts" | "activity" | "finance" | "admin";
 
 export type EditTarget = {
-  resource: "contacts" | "projects" | "tasks" | "accounts" | "transactions" | "activities";
+  resource: "contacts" | "projects" | "tasks" | "accounts" | "transactions" | "activities" | "payments";
   id: string;
 };
 
@@ -59,7 +59,7 @@ const SECTION_ALIAS: Record<string, Section> = {
 };
 
 const EDIT_RESOURCES = new Set<EditTarget["resource"]>([
-  "contacts", "projects", "tasks", "accounts", "transactions", "activities",
+  "contacts", "projects", "tasks", "accounts", "transactions", "activities", "payments",
 ]);
 
 export function validMonth(value: string): boolean {
@@ -88,7 +88,7 @@ function isId(value: string | null): value is string {
 
 function editAllowed(section: Section, edit: EditTarget | null): edit is EditTarget {
   if (!edit) return false;
-  if (section === "contacts") return edit.resource === "contacts";
+  if (section === "contacts") return edit.resource === "contacts" || edit.resource === "payments";
   if (section === "activity") return edit.resource === "tasks" || edit.resource === "activities";
   if (section === "finance") return edit.resource === "accounts" || edit.resource === "transactions";
   return false;

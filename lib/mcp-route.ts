@@ -1,8 +1,10 @@
 import { readSso } from "./lulox-sso.ts";
 import type { D1Like } from "./finance.ts";
 import {
+  addContactNote,
   createContact,
   createEvent,
+  createPayment,
   createTask,
   deleteNote,
   convertItem,
@@ -13,6 +15,7 @@ import {
   listUpcoming,
   listInquiries,
   listNotes,
+  listPayments,
   listTasks,
   resolveApprovedUser,
   searchContacts,
@@ -22,6 +25,7 @@ import {
   searchTasks,
   taskToUndatedNote,
   updateNote,
+  updatePayment,
   updateTask,
 } from "./mcp-rpc.ts";
 import {
@@ -129,6 +133,33 @@ function toolsFor(db: D1Like, email: string): McpToolDef[] {
       body: { type: "string" },
       contactIds: { type: "array", items: { type: "string" } },
     }, ["title", "occurredAt"]), annotations: { readOnlyHint: false, destructiveHint: false, title: "Create event" }, run: run(createEvent) },
+    { name: "garpen_add_contact_note", description: "Add a note to an existing Garpen contact. Without occurredAt it is an undated note.", inputSchema: jsonSchemaObject({
+      contactId: { type: "string" },
+      title: { type: "string", minLength: 1, maxLength: 200 },
+      body: { type: "string" },
+      occurredAt: { type: "string" },
+    }, ["contactId", "title"]), annotations: { readOnlyHint: false, destructiveHint: false, title: "Add contact note" }, run: run(addContactNote) },
+    { name: "garpen_create_payment", description: "Register a payment for an existing Garpen contact. Amount is in major units (or amountMinor in cents). Currency is ARS or USD. Date is YYYY-MM-DD. Status is pending or paid (default pending).", inputSchema: jsonSchemaObject({
+      contactId: { type: "string" },
+      amount: { type: "number", exclusiveMinimum: 0 },
+      amountMinor: { type: "integer", exclusiveMinimum: 0 },
+      currency: { type: "string", enum: ["ARS", "USD"] },
+      date: { type: "string", description: "YYYY-MM-DD" },
+      occurredAt: { type: "string", description: "YYYY-MM-DD (alias of date)" },
+      concept: { type: "string", minLength: 1, maxLength: 500 },
+      status: { type: "string", enum: ["pending", "paid"] },
+    }, ["contactId", "currency", "concept"]), annotations: { readOnlyHint: false, destructiveHint: false, title: "Create payment" }, run: run(createPayment) },
+    { name: "garpen_list_payments", description: "List payments. Optionally filter by contactId and status.", inputSchema: jsonSchemaObject({ contactId: { type: "string" }, status: { type: "string", enum: ["pending", "paid"] }, ...pageProps }), annotations: { readOnlyHint: true, title: "List payments" }, run: run(listPayments) },
+    { name: "garpen_update_payment", description: "Update a payment. Send only the fields to change. Use status to mark it paid or pending.", inputSchema: jsonSchemaObject({
+      id: { type: "string" },
+      amount: { type: "number", exclusiveMinimum: 0 },
+      amountMinor: { type: "integer", exclusiveMinimum: 0 },
+      currency: { type: "string", enum: ["ARS", "USD"] },
+      date: { type: "string", description: "YYYY-MM-DD" },
+      occurredAt: { type: "string" },
+      concept: { type: "string", minLength: 1, maxLength: 500 },
+      status: { type: "string", enum: ["pending", "paid"] },
+    }, ["id"]), annotations: { readOnlyHint: false, destructiveHint: false, title: "Update payment" }, run: run(updatePayment) },
     { name: "garpen_list_inquiries", description: "List contact-form inquiries in your account.", inputSchema: jsonSchemaObject({ status: { type: "string", enum: ["new", "read", "archived"] }, ...pageProps }), annotations: { readOnlyHint: true, title: "List inquiries" }, run: run(listInquiries) },
     { name: "garpen_search_inquiries", description: "Search contact-form inquiries.", inputSchema: jsonSchemaObject({ ...queryProps, status: { type: "string", enum: ["new", "read", "archived"] }, ...pageProps }, ["query"]), annotations: { readOnlyHint: true, title: "Search inquiries" }, run: run(searchInquiries) },
   ];

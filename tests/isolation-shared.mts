@@ -37,11 +37,13 @@ export const ids = {
   itemA: "item-a",
   itemB: "item-b",
   itemPoison: "item-poison",
+  paymentA: "payment-a",
+  paymentB: "payment-b",
   pushA: "https://push.example.test/device-user-a",
   pushB: "https://push.example.test/device-user-b",
 };
 
-const TABLES = ["user", "contacts", "projects", "tasks", "financial_accounts", "financial_transactions", "receipts", "note_media", "recurring_rules", "activities", "activity_contacts", "inquiries", "push_subscriptions", "timer_state", "time_entries", "documents", "document_items", "document_time_entries", "contact_relationships", "session", "invites", "integration_nonces", "integration_tombstones", "user_keys", "records", "e2e_counters"];
+const TABLES = ["user", "contacts", "projects", "tasks", "financial_accounts", "financial_transactions", "receipts", "note_media", "recurring_rules", "activities", "activity_contacts", "inquiries", "push_subscriptions", "timer_state", "time_entries", "documents", "document_items", "document_time_entries", "contact_payments", "contact_relationships", "session", "invites", "integration_nonces", "integration_tombstones", "user_keys", "records", "e2e_counters"];
 
 function userRow(db: DatabaseSync, id: string, name: string) {
   db.prepare("INSERT INTO user (id,name,email,emailVerified,createdAt,updatedAt,role,approvalStatus) VALUES (?,?,?,?,?,?,?,?)").run(id, name, id + "@test.local", 1, 1, 1, "user", "approved");
@@ -106,6 +108,9 @@ export function seedWorld() {
   db.prepare("INSERT INTO document_time_entries (time_entry_id,document_id,user_id) VALUES (?,?,?)").run(ids.entryA, ids.docA, A);
   // B's hours linked under A's user_id. The import query must require d.user_id = e.user_id or these hours vanish.
   db.prepare("INSERT INTO document_time_entries (time_entry_id,document_id,user_id) VALUES (?,?,?)").run(ids.entryB, ids.docA, A);
+  const payment = db.prepare("INSERT INTO contact_payments (id,user_id,contact_id,amount_minor,currency,occurred_at,concept,status,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)");
+  payment.run(ids.paymentA, A, ids.contactA, 424242, "ARS", "2026-10-01", "A-SECRET-PAYMENT", "pending", 1, 1);
+  payment.run(ids.paymentB, B, ids.contactB, 10000, "USD", "2026-10-02", "pago b", "paid", 2, 2);
   return { db, d1 };
 }
 

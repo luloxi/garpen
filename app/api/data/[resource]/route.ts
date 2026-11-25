@@ -8,9 +8,10 @@ import { createRuleForTransaction, generateDue, isDateKey, parseRecurrence, toda
 import { prepareActivityBody } from "@/lib/note-html";
 import { activityOccurredAt } from "@/lib/pending-notes";
 import { attachReceipt, receiptLinkable } from "@/lib/receipts-db";
+import { PAYMENT_SELECT, parsePaymentCreate, paymentErrorEs } from "@/lib/payments";
 
 export const dynamic = "force-dynamic";
-const resources = ["contacts", "projects", "tasks", "accounts", "transactions", "activities"] as const;
+const resources = ["contacts", "projects", "tasks", "accounts", "transactions", "activities", "payments"] as const;
 type Resource = typeof resources[number];
 
 function validResource(value: string): value is Resource { return resources.includes(value as Resource); }
@@ -52,6 +53,17 @@ export async function GET(request: Request, { params }: { params: Promise<{ reso
     case "tasks": query = "SELECT t.id, t.title, t.description, t.status, t.priority, t.due_date AS dueDate, t.project_id AS projectId, p.name AS projectName, t.contact_id AS contactId, c.name AS contactName FROM tasks t LEFT JOIN projects p ON p.id = t.project_id AND p.user_id = t.user_id LEFT JOIN contacts c ON c.id = t.contact_id AND c.user_id = t.user_id WHERE t.user_id = ? ORDER BY CASE t.status WHEN 'todo' THEN 0 WHEN 'in_progress' THEN 1 ELSE 2 END, t.due_date"; break;
     case "accounts": query = ACCOUNTS_SQL; break;
     case "activities": query = "SELECT a.id, a.kind, a.title, a.body, a.occurred_at AS occurredAt, a.created_at AS createdAt, (SELECT group_concat(ac.contact_id, ',') FROM activity_contacts ac WHERE ac.activity_id=a.id AND ac.user_id=a.user_id) AS contactIds, (SELECT group_concat(c.name, ', ') FROM activity_contacts ac JOIN contacts c ON c.id=ac.contact_id AND c.user_id=ac.user_id WHERE ac.activity_id=a.id AND ac.user_id=a.user_id) AS contactNames FROM activities a WHERE a.user_id = ? ORDER BY a.occurred_at DESC, a.created_at DESC LIMIT 500"; break;
+    case "payments": {
+      const url = new URL(request.url);
+      const contactId = (url.searchParams.get("contactId") || "").trim();
+      const status = (url.searchParams.get("status") || "").trim();
+      const where = ["p.user_id = ?"];
+      const binds: unknown[] = [userId];
+      if (contactId) { where.push("p.contact_id = ?"); binds.push(contactId.slice(0, 80)); }
+      if (status === "pending" || status === "paid") { where.push("p.status = ?"); binds.push(status); }
+      const rows = await db.prepare(PAYMENT_SELECT + " WHERE " + where.join(" AND ") + " ORDER BY p.occurred_at DESC, p.created_at DESC").bind(...binds).all();
+      return NextResponse.json({ items: rows.results });
+    }
   }
   const result = await db.prepare(query).bind(userId).all();
   return NextResponse.json({ items: result.results });
@@ -131,6 +143,14 @@ export async function POST(request: Request, { params }: { params: Promise<{ res
           await generateDue(db,userId,todayInBuenosAires(now),now);
         }
         await reconcileManual(db, userId, id, now);
+        break;
+      }
+      case "payments": {
+        const parsed = parsePaymentCreate(body);
+        if (!parsed.ok) return NextResponse.json({ error: paymentErrorEs(parsed.message) }, { status: 400 });
+        if (!(await db.prepare("SELECT id FROM contacts WHERE id=? AND user_id=?").bind(parsed.value.contactId, userId).first())) return NextResponse.json({ error: "Contacto inválido" }, { status: 400 });
+        const v = parsed.value;
+        await db.prepare("INSERT INTO contact_payments (id,user_id,contact_id,amount_minor,currency,occurred_at,concept,status,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)").bind(id, userId, v.contactId, v.amountMinor, v.currency, v.occurredAt, v.concept, v.status, now, now).run();
         break;
       }
     }
