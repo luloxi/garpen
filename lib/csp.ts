@@ -32,6 +32,14 @@ export const CSP_IMG_HOSTS = [
  */
 export const CSP_CONNECT_HOSTS = ["https://gravatar.com", "https://unavatar.io"] as const;
 
+/**
+ * "Guardar en Google Sheets": the browser writes the Sheet itself with a short-lived
+ * drive.file token. Drive (find the file) and Sheets (write it) are connect-src;
+ * Google's sign-in script and its popup live on accounts.google.com.
+ */
+export const CSP_GOOGLE_API_HOSTS = ["https://www.googleapis.com", "https://sheets.googleapis.com"] as const;
+export const CSP_GOOGLE_FRAME_HOSTS = ["https://accounts.google.com"] as const;
+
 /** Origins allowed to show Garpen in an iframe (besides itself). */
 export const FRAME_ANCESTORS = ["https://genki.lulox.com.ar"] as const;
 
@@ -92,7 +100,7 @@ export function buildCsp({ nonce, isDev }: { nonce: string; isDev: boolean }): s
   const dev = isDev === true;
   const script = ["'self'", `'nonce-${nonce}'`, "'strict-dynamic'", "'wasm-unsafe-eval'"];
   if (dev) script.push("'unsafe-eval'");
-  const connect = ["'self'", ...CSP_CONNECT_HOSTS];
+  const connect = ["'self'", ...CSP_CONNECT_HOSTS, ...CSP_GOOGLE_API_HOSTS];
   if (dev) connect.push("ws:");
   const directives = [
     "default-src 'self'",
@@ -100,6 +108,7 @@ export function buildCsp({ nonce, isDev }: { nonce: string; isDev: boolean }): s
     "style-src 'self' 'unsafe-inline'",
     `img-src 'self' data: blob: ${CSP_IMG_HOSTS.join(" ")}`,
     `connect-src ${connect.join(" ")}`,
+    `frame-src ${CSP_GOOGLE_FRAME_HOSTS.join(" ")}`,
     "font-src 'self'",
     "worker-src 'self'",
     "manifest-src 'self'",

@@ -27,6 +27,7 @@ const loaders = {
   recurringId: () => import("@/app/api/recurring/[id]/route"),
   receiptId: () => import("@/app/api/receipts/[id]/route"),
   avatar: () => import("@/app/api/avatar/[id]/route"),
+  sheetsExport: () => import("@/app/api/export/sheets/route"),
 } as const;
 
 type RouteName = keyof typeof loaders;
@@ -67,6 +68,7 @@ export function matchLocalPath(pathname: string): Rule {
   if ((match = path.match(/^\/api\/time-entries\/([^/]+)$/))) return { name: "timeId", params: { id: decode(match[1]) } };
   if (path === "/api/time-entries") return { name: "time", params: {} };
   if (path === "/api/timer") return { name: "timer", params: {} };
+  if (path === "/api/export/sheets") return { name: "sheetsExport", params: {} };
   if ((match = path.match(/^\/api\/recurring\/([^/]+)$/))) return { name: "recurringId", params: { id: decode(match[1]) } };
   if (path === "/api/recurring") return { name: "recurring", params: {} };
   if ((match = path.match(/^\/api\/avatar\/([^/]+)$/))) return { name: "avatar", params: { id: decode(match[1]) } };
